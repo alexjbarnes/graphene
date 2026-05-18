@@ -1,0 +1,32 @@
+{
+  "name": "graphene",
+  "version": "0.1.0",
+  "description": "Persistent context graph for AI agents",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "graphene": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "mcp",
+    "ai",
+    "context",
+    "agents"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^12.10.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.8.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6"
+  }
+}
