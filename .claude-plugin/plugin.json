@@ -1,0 +1,5 @@
+{
+  "name": "graphene",
+  "version": "0.1.0",
+  "description": "Persistent context graph for AI agents with behavioral enforcement"
+}
