@@ -1,0 +1,18 @@
+{
+  "name": "graphene",
+  "owner": {
+    "name": "Alex Barnes"
+  },
+  "plugins": [
+    {
+      "name": "graphene",
+      "description": "Persistent context graph for AI agents with behavioral enforcement",
+      "version": "0.1.0",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/alexjbarnes/graphene.git",
+        "sha": "eda8dca97c07dd59063cb461294d7642bf1597e9"
+      }
+    }
+  ]
+}
