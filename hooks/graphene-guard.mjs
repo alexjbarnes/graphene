@@ -1,6 +1,16 @@
 #!/usr/bin/env node
 
+import { execSync } from "node:child_process";
 import { readState, writeState, cleanupStaleSessions } from "./lib/state.mjs";
+
+function inGitRepo() {
+  try {
+    execSync("git rev-parse --show-toplevel", { stdio: "pipe" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const WRITE_TOOLS = new Set([
   "mcp__graphene__learn",
@@ -81,6 +91,11 @@ async function main() {
 
   if (hook_event_name === "PreToolUse") {
     if (tool_name?.startsWith("mcp__graphene__")) {
+      writeState(session_id, state);
+      process.exit(0);
+    }
+
+    if (!inGitRepo()) {
       writeState(session_id, state);
       process.exit(0);
     }
