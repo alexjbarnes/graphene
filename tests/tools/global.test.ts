@@ -3,6 +3,7 @@ import type { GrapheneDatabase } from "../../src/db.js";
 import { createTestGlobalDb } from "../helpers.js";
 import { handleGlobalRead } from "../../src/tools/global-read.js";
 import { handleGlobalWrite } from "../../src/tools/global-write.js";
+import { handleGlobalDelete } from "../../src/tools/global-delete.js";
 
 describe("global tools", () => {
   let db: GrapheneDatabase;
@@ -57,6 +58,31 @@ describe("global tools", () => {
 
       const facts = db.prepare("SELECT * FROM facts").all();
       expect(facts).toHaveLength(2);
+    });
+  });
+
+  describe("global_delete", () => {
+    it("deletes an existing fact", () => {
+      handleGlobalWrite(db, { category: "preference", subject: "testing", content: "TDD" });
+      const result = handleGlobalDelete(db, { category: "preference", subject: "testing" });
+      expect(result.deleted).toBe(true);
+
+      const facts = db.prepare("SELECT * FROM facts").all();
+      expect(facts).toHaveLength(0);
+    });
+
+    it("returns false for non-existent fact", () => {
+      const result = handleGlobalDelete(db, { category: "preference", subject: "nope" });
+      expect(result.deleted).toBe(false);
+    });
+
+    it("only deletes the matching category+subject", () => {
+      handleGlobalWrite(db, { category: "preference", subject: "testing", content: "TDD" });
+      handleGlobalWrite(db, { category: "preference", subject: "go", content: "std only" });
+      handleGlobalDelete(db, { category: "preference", subject: "testing" });
+
+      const facts = db.prepare("SELECT * FROM facts").all();
+      expect(facts).toHaveLength(1);
     });
   });
 

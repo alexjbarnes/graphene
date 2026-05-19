@@ -13,6 +13,7 @@ import { handleGlobalRead } from "./tools/global-read.js";
 import { handleGlobalWrite } from "./tools/global-write.js";
 import { handleRemoveObservation } from "./tools/remove-observation.js";
 import { handleDeleteNode } from "./tools/delete-node.js";
+import { handleGlobalDelete } from "./tools/global-delete.js";
 import { handleBatch } from "./tools/batch.js";
 import { handleStatus } from "./tools/status.js";
 const TOOLS = [
@@ -173,6 +174,18 @@ const TOOLS = [
                 content: { type: "string", description: "Fact content" },
             },
             required: ["category", "subject", "content"],
+        },
+    },
+    {
+        name: "global_delete",
+        description: "Remove a user-level fact by category and subject.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                category: { type: "string", description: "Fact category" },
+                subject: { type: "string", description: "Fact subject" },
+            },
+            required: ["category", "subject"],
         },
     },
     {
@@ -350,6 +363,8 @@ function dispatch(ctx, tool, args) {
             return handleGlobalRead(ctx.globalDB, args);
         case "global_write":
             return handleGlobalWrite(ctx.globalDB, args);
+        case "global_delete":
+            return handleGlobalDelete(ctx.globalDB, args);
         default: {
             const { repoDB, repoRoot } = requireRepo(ctx);
             switch (tool) {
