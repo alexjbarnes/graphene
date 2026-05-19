@@ -18,7 +18,7 @@ import { handleStatus } from "./tools/status.js";
 const TOOLS = [
     {
         name: "status",
-        description: "Get full context for this session in one call. Returns the node index, any stale nodes, current HEAD commit, and all user preferences/facts. Call this at the start of every session.",
+        description: "Get full context: node index, stale nodes, current HEAD, and user preferences/facts. Automatically injected at session start by the hook, but can be called manually to refresh.",
         inputSchema: {
             type: "object",
             properties: {},
@@ -257,10 +257,10 @@ export function createServer(ctx) {
     const server = new Server({ name: "graphene", version: "0.1.0" }, {
         capabilities: { tools: {} },
         instructions: [
-            "MANDATORY: You must call `status` before doing anything else in every session. No exceptions. Do not read files, do not grep, do not explore the codebase until you have called `status`.",
-            "MANDATORY: Before working on any subsystem, call `read(name)` on the relevant node. The node contains entry_points, observations, and edges that tell you where to look. Do not skip this and start grepping. The graph exists to prevent wasted tool calls.",
-            "If `status` returns an empty node list, explore the codebase and populate with `batch()`. Every node must have summary, covers (file/directory patterns for staleness tracking), entry_points (key files), and last_commit (set to HEAD). Nodes missing these fields are useless. Prefer fewer complete nodes over many empty ones.",
-            "After changing code, update `last_commit` on affected nodes. When you learn something non-obvious, call `learn`. When you spend 3+ tool calls finding something, record where you found it. The graph is only as good as what you put into it.",
+            "Graph status is automatically injected at session start. You do not need to call `status` manually.",
+            "Before working on any subsystem, call `read(name)` on the relevant node. It contains entry_points, observations, and edges that tell you where to look.",
+            "If the graph is empty, explore the codebase and populate with `batch()`. Every node must have summary, covers, entry_points, and last_commit.",
+            "After changing code, update `last_commit` on affected nodes. When you learn something non-obvious, call `learn`. When you spend 3+ tool calls finding something, record where you found it.",
         ].join("\n\n"),
     });
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -294,18 +294,11 @@ const GRAPHENE_CLAUDE_MD = `
 ${GRAPHENE_MARKER}
 ## Graphene Context Graph
 
-This project has a persistent context graph managed by the Graphene MCP server. It tracks subsystems, relationships, and learned observations across sessions. You must use it.
+This project has a persistent context graph. The graph status (node index, stale nodes, user preferences) is automatically injected at the start of each session. You do not need to call status manually.
 
-### Before anything else
-1. Call \`status\`. It returns the node index, stale nodes, and user preferences.
-2. Identify which nodes are relevant to your task.
-3. Call \`read(name)\` on each relevant node. It contains entry_points (where to start reading), observations (what prior sessions learned), and edges (related subsystems).
-
-Do not skip these steps. Do not start reading files, grepping, or exploring until you have checked the graph. The graph exists to prevent wasted tool calls. Even if it turns out not to help, reading a node is faster than grepping through wrong files.
-
-### Before claiming something doesn't exist
-- Check the edges on related nodes. The feature may live in a connected subsystem.
-- Use \`search(query)\` to check observations from prior sessions.
+### Using the graph
+- Before exploring unfamiliar code, call \`read(name)\` on the relevant node. It contains entry_points (where to start reading), observations (what prior sessions learned), and edges (related subsystems).
+- Before claiming something doesn't exist, check edges on related nodes and use \`search(query)\` to check observations from prior sessions.
 
 ### After changing code
 - Update \`last_commit\` on affected nodes: \`upsert_node(name, {last_commit: "<current HEAD>"})\`
@@ -317,13 +310,13 @@ Do not skip these steps. Do not start reading files, grepping, or exploring unti
 - Something you assumed was wrong: remove the old observation, add the correction.
 
 ### First session (empty graph)
-If \`status\` returns an empty node list, explore the codebase and populate with \`batch()\`. Every node must include:
-- \`summary\`: one-line purpose statement. Without this, the index is just a list of names.
-- \`covers\`: file/directory patterns (e.g. \`["src/auth/"]\`). Without this, staleness tracking cannot work.
-- \`entry_points\`: key files to start reading (e.g. \`["src/auth/router.ts", "src/auth/middleware.ts"]\`).
+If the graph is empty, explore the codebase and populate with \`batch()\`. Every node must include:
+- \`summary\`: one-line purpose statement.
+- \`covers\`: file/directory patterns (e.g. \`["src/auth/"]\`). Required for staleness tracking.
+- \`entry_points\`: key files to start reading.
 - \`last_commit\`: set to current HEAD so staleness tracking starts immediately.
 
-A node without summary, covers, and entry_points is useless. Prefer fewer complete nodes over many empty ones.
+Prefer fewer complete nodes over many empty ones.
 ${GRAPHENE_MARKER_END}
 `;
 function ensureClaudeMd(repoRoot) {
