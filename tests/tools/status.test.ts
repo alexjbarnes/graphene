@@ -51,15 +51,28 @@ describe("status", () => {
     expect(result.nodes).toHaveLength(1);
     expect(result.nodes[0].name).toBe("auth");
     expect(result.stale_nodes).toHaveLength(0);
-    expect(result.facts).toHaveLength(1);
-    expect(result.facts[0].content).toBe("TDD only");
+    expect(result.global_facts).toHaveLength(1);
+    expect(result.global_facts[0].content).toBe("TDD only");
   });
 
   it("returns empty state for fresh repo", () => {
     const result = handleStatus(repoDB, globalDB, repo.path, {});
     expect(result.nodes).toEqual([]);
     expect(result.stale_nodes).toEqual([]);
-    expect(result.facts).toEqual([]);
+    expect(result.project_facts).toEqual([]);
+    expect(result.global_facts).toEqual([]);
+  });
+
+  it("includes project facts", () => {
+    repoDB
+      .prepare(
+        "INSERT INTO project_facts (category, subject, content) VALUES (?, ?, ?)"
+      )
+      .run("convention", "node-env", "NODE_ENV must not be set for next build");
+
+    const result = handleStatus(repoDB, globalDB, repo.path, {});
+    expect(result.project_facts).toHaveLength(1);
+    expect(result.project_facts[0].content).toContain("NODE_ENV");
   });
 
   it("includes stale nodes with reason", () => {

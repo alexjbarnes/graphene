@@ -6,7 +6,8 @@ interface StatusResult {
   head: string;
   nodes: IndexEntry[];
   stale_nodes: StaleNode[];
-  facts: Fact[];
+  project_facts: Fact[];
+  global_facts: Fact[];
 }
 
 export function handleStatus(
@@ -46,9 +47,13 @@ export function handleStatus(
     }
   }
 
-  const facts = globalDB
+  const projectFacts = repoDB
+    .prepare("SELECT * FROM project_facts ORDER BY category, subject")
+    .all() as unknown as Fact[];
+
+  const globalFacts = globalDB
     .prepare("SELECT * FROM facts ORDER BY category, subject")
     .all() as unknown as Fact[];
 
-  return { head, nodes, stale_nodes: staleNodes, facts };
+  return { head, nodes, stale_nodes: staleNodes, project_facts: projectFacts, global_facts: globalFacts };
 }

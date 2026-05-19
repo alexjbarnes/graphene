@@ -21,9 +21,12 @@ export function handleStatus(repoDB, globalDB, repoRoot, _args) {
             staleNodes.push({ name: node.name, reason: "changed", changed_files: changed });
         }
     }
-    const facts = globalDB
+    const projectFacts = repoDB
+        .prepare("SELECT * FROM project_facts ORDER BY category, subject")
+        .all();
+    const globalFacts = globalDB
         .prepare("SELECT * FROM facts ORDER BY category, subject")
         .all();
-    return { head, nodes, stale_nodes: staleNodes, facts };
+    return { head, nodes, stale_nodes: staleNodes, project_facts: projectFacts, global_facts: globalFacts };
 }
 //# sourceMappingURL=status.js.map

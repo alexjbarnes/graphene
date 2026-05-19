@@ -14,6 +14,9 @@ import { handleGlobalWrite } from "./tools/global-write.js";
 import { handleRemoveObservation } from "./tools/remove-observation.js";
 import { handleDeleteNode } from "./tools/delete-node.js";
 import { handleGlobalDelete } from "./tools/global-delete.js";
+import { handleProjectRead } from "./tools/project-read.js";
+import { handleProjectWrite } from "./tools/project-write.js";
+import { handleProjectDelete } from "./tools/project-delete.js";
 import { handleBatch } from "./tools/batch.js";
 import { handleStatus } from "./tools/status.js";
 const TOOLS = [
@@ -189,6 +192,42 @@ const TOOLS = [
         },
     },
     {
+        name: "project_read",
+        description: "Read repo-scoped facts (conventions, context, decisions specific to this project). No arguments returns all project facts.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                category: { type: "string", description: "Filter by category" },
+                subject: { type: "string", description: "Filter by subject" },
+            },
+        },
+    },
+    {
+        name: "project_write",
+        description: "Write a repo-scoped fact. One fact per category+subject pair; writing to an existing pair replaces the content. Use for project-specific conventions, decisions, and context that don't belong on a node.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                category: { type: "string", description: "Fact category" },
+                subject: { type: "string", description: "Fact subject" },
+                content: { type: "string", description: "Fact content" },
+            },
+            required: ["category", "subject", "content"],
+        },
+    },
+    {
+        name: "project_delete",
+        description: "Remove a repo-scoped fact by category and subject.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                category: { type: "string", description: "Fact category" },
+                subject: { type: "string", description: "Fact subject" },
+            },
+            required: ["category", "subject"],
+        },
+    },
+    {
         name: "remove_observation",
         description: "Remove a specific observation by ID. Use when a learned fact turns out to be wrong or outdated.",
         inputSchema: {
@@ -271,9 +310,9 @@ export function createServer(ctx) {
         capabilities: { tools: {} },
         instructions: [
             "Graph status is automatically injected at session start. You do not need to call `status` manually.",
-            "Before working on any subsystem, call `read(name)` on the relevant node. It contains entry_points, observations, and edges that tell you where to look.",
-            "If the graph is empty, explore the codebase and populate with `batch()`. Every node must have summary, covers, entry_points, and last_commit.",
-            "After changing code, update `last_commit` on affected nodes. When you learn something non-obvious, call `learn`. When you spend 3+ tool calls finding something, record where you found it.",
+            "Before working on any subsystem, call `read(name)` on the relevant node for entry_points, observations, and edges.",
+            "If the graph is empty, explore the codebase and populate with `batch()`.",
+            "Tool guide: `learn(node, content)` for code knowledge on a node. `project_write(category, subject, content)` for repo-specific conventions and decisions. `global_write(category, subject, content)` for preferences that apply across all repos. After changing code, update `last_commit` on affected nodes.",
         ].join("\n\n"),
     });
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -307,29 +346,27 @@ const GRAPHENE_CLAUDE_MD = `
 ${GRAPHENE_MARKER}
 ## Graphene Context Graph
 
-This project has a persistent context graph. The graph status (node index, stale nodes, user preferences) is automatically injected at the start of each session. You do not need to call status manually.
+This project has a persistent context graph. The graph status is automatically injected at session start. You do not need to call status manually.
 
-### Using the graph
-- Before exploring unfamiliar code, call \`read(name)\` on the relevant node. It contains entry_points (where to start reading), observations (what prior sessions learned), and edges (related subsystems).
-- Before claiming something doesn't exist, check edges on related nodes and use \`search(query)\` to check observations from prior sessions.
+### Reading
+- \`read(name)\` - get node detail: entry_points, observations, edges
+- \`search(query)\` - find across nodes and observations
 
-### After changing code
-- Update \`last_commit\` on affected nodes: \`upsert_node(name, {last_commit: "<current HEAD>"})\`
+### Writing
+- \`learn(node, content)\` - record code knowledge on a node (where things live, gotchas, patterns)
+- \`project_write(category, subject, content)\` - record repo-specific conventions, decisions, context
+- \`global_write(category, subject, content)\` - record preferences that apply across all repos
+- \`upsert_node(name, {last_commit: "HEAD"})\` - update a node after changing its code
+- \`link(from, to, type, reason)\` - record relationships between subsystems
 
-### When you learn something
-- Found code somewhere unexpected: \`learn(node_name, content)\`
-- Spent 3+ tool calls locating something: record where you found it.
-- Discovered a cross-cutting relationship: \`link(from, to, type, reason)\`
-- Something you assumed was wrong: remove the old observation, add the correction.
+### When to write
+- After changing code: update \`last_commit\` on affected nodes
+- After discovering something non-obvious: \`learn()\` it
+- After spending 3+ tool calls finding something: record where you found it
+- Project conventions and decisions: \`project_write()\`
 
-### First session (empty graph)
-If the graph is empty, explore the codebase and populate with \`batch()\`. Every node must include:
-- \`summary\`: one-line purpose statement.
-- \`covers\`: file/directory patterns (e.g. \`["src/auth/"]\`). Required for staleness tracking.
-- \`entry_points\`: key files to start reading.
-- \`last_commit\`: set to current HEAD so staleness tracking starts immediately.
-
-Prefer fewer complete nodes over many empty ones.
+### Empty graph
+If the graph has no nodes, use \`/graphene:init\` or populate with \`batch()\`. Every node needs summary, covers, entry_points, and last_commit.
 ${GRAPHENE_MARKER_END}
 `;
 function ensureClaudeMd(repoRoot) {
@@ -390,6 +427,12 @@ function dispatch(ctx, tool, args) {
                     return handleDeleteNode(repoDB, args);
                 case "batch":
                     return handleBatch(repoDB, args);
+                case "project_read":
+                    return handleProjectRead(repoDB, args);
+                case "project_write":
+                    return handleProjectWrite(repoDB, args);
+                case "project_delete":
+                    return handleProjectDelete(repoDB, args);
                 default:
                     throw new Error(`Unknown tool: ${tool}`);
             }

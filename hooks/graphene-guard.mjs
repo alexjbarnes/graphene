@@ -61,9 +61,16 @@ function formatStatus(status) {
     }
   }
 
-  if (status.facts.length > 0) {
-    lines.push(`Facts (${status.facts.length}):`);
-    for (const f of status.facts) {
+  if (status.project_facts.length > 0) {
+    lines.push(`Project facts (${status.project_facts.length}):`);
+    for (const f of status.project_facts) {
+      lines.push(`  - [${f.category}/${f.subject}] ${f.content}`);
+    }
+  }
+
+  if (status.global_facts.length > 0) {
+    lines.push(`Global facts (${status.global_facts.length}):`);
+    for (const f of status.global_facts) {
       lines.push(`  - [${f.category}/${f.subject}] ${f.content}`);
     }
   }
@@ -80,6 +87,9 @@ const WRITE_TOOLS = new Set([
   "mcp__graphene__delete_node",
   "mcp__graphene__remove_observation",
   "mcp__graphene__global_write",
+  "mcp__graphene__global_delete",
+  "mcp__graphene__project_write",
+  "mcp__graphene__project_delete",
 ]);
 
 const READ_TOOLS = new Set([

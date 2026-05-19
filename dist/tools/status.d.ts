@@ -4,7 +4,8 @@ interface StatusResult {
     head: string;
     nodes: IndexEntry[];
     stale_nodes: StaleNode[];
-    facts: Fact[];
+    project_facts: Fact[];
+    global_facts: Fact[];
 }
 export declare function handleStatus(repoDB: GrapheneDatabase, globalDB: GrapheneDatabase, repoRoot: string, _args: Record<string, unknown>): StatusResult;
 export {};
