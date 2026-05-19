@@ -98,7 +98,7 @@ const READ_TOOLS = new Set([
   "mcp__graphene__status",
 ]);
 
-const SEARCH_PATTERN = /\b(grep|find|rg|ag|ack)\b/;
+const SEARCH_PATTERN = /(?:^|[|;&]\s*)(grep|find|rg|ag|ack)\b/;
 const SEARCH_NUDGE_THRESHOLD = 5;
 
 async function main() {

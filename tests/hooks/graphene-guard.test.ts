@@ -276,6 +276,22 @@ describe("graphene-guard hook", () => {
       const { state } = run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "ls -la" } });
       expect(state?.searches_since_read).toBe(0);
     });
+
+    it("does not count git commands with find-like flags", () => {
+      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "mcp__graphene__status", tool_input: {} });
+      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "git diff --find-renames" } });
+      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "git log --all" } });
+      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "git status" } });
+      const { state } = run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "git push origin main" } });
+      expect(state?.searches_since_read).toBe(0);
+    });
+
+    it("counts find/grep after pipes", () => {
+      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "mcp__graphene__status", tool_input: {} });
+      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "cat file.ts | grep pattern" } });
+      const { state } = run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "find . -name '*.ts' | grep test" } });
+      expect(state?.searches_since_read).toBe(2);
+    });
   });
 
   describe("edge cases", () => {
