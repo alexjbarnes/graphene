@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../../src/db.js";
 import { createTestRepoDb } from "../helpers.js";
 import { handleSearch } from "../../src/tools/search.js";
 import { handleUpsertNode } from "../../src/tools/upsert-node.js";
 import { handleLearn } from "../../src/tools/learn.js";
 
 describe("search", () => {
-  let db: Database.Database;
+  let db: GrapheneDatabase;
 
-  beforeEach(() => {
-    db = createTestRepoDb();
+  beforeEach(async () => {
+    db = await createTestRepoDb();
   });
 
   it("finds a node by name", () => {

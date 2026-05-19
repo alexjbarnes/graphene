@@ -1,5 +1,5 @@
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../db.js";
 import type { Fact } from "../types.js";
-export declare function handleGlobalRead(db: Database.Database, args: Record<string, unknown>): {
+export declare function handleGlobalRead(db: GrapheneDatabase, args: Record<string, unknown>): {
     facts: Fact[];
 };

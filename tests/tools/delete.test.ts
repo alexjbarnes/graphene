@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../../src/db.js";
 import { createTestRepoDb } from "../helpers.js";
 import { handleUpsertNode } from "../../src/tools/upsert-node.js";
 import { handleLearn } from "../../src/tools/learn.js";
@@ -8,10 +8,10 @@ import { handleDeleteNode } from "../../src/tools/delete-node.js";
 import { handleRemoveObservation } from "../../src/tools/remove-observation.js";
 
 describe("delete_node", () => {
-  let db: Database.Database;
+  let db: GrapheneDatabase;
 
-  beforeEach(() => {
-    db = createTestRepoDb();
+  beforeEach(async () => {
+    db = await createTestRepoDb();
   });
 
   it("deletes a node", () => {
@@ -51,10 +51,10 @@ describe("delete_node", () => {
 });
 
 describe("remove_observation", () => {
-  let db: Database.Database;
+  let db: GrapheneDatabase;
 
-  beforeEach(() => {
-    db = createTestRepoDb();
+  beforeEach(async () => {
+    db = await createTestRepoDb();
     handleUpsertNode(db, { name: "auth", type: "subsystem" });
   });
 

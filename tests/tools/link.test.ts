@@ -1,15 +1,15 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../../src/db.js";
 import { createTestRepoDb } from "../helpers.js";
 import { handleLink } from "../../src/tools/link.js";
 import { handleUnlink } from "../../src/tools/unlink.js";
 import { handleUpsertNode } from "../../src/tools/upsert-node.js";
 
 describe("link", () => {
-  let db: Database.Database;
+  let db: GrapheneDatabase;
 
-  beforeEach(() => {
-    db = createTestRepoDb();
+  beforeEach(async () => {
+    db = await createTestRepoDb();
     handleUpsertNode(db, { name: "auth", type: "subsystem" });
     handleUpsertNode(db, { name: "db", type: "module" });
     handleUpsertNode(db, { name: "session", type: "subsystem" });
@@ -84,10 +84,10 @@ describe("link", () => {
 });
 
 describe("unlink", () => {
-  let db: Database.Database;
+  let db: GrapheneDatabase;
 
-  beforeEach(() => {
-    db = createTestRepoDb();
+  beforeEach(async () => {
+    db = await createTestRepoDb();
     handleUpsertNode(db, { name: "auth", type: "subsystem" });
     handleUpsertNode(db, { name: "db", type: "module" });
     handleUpsertNode(db, { name: "session", type: "subsystem" });

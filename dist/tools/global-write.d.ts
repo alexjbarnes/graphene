@@ -1,5 +1,5 @@
-import type Database from "better-sqlite3";
-export declare function handleGlobalWrite(db: Database.Database, args: Record<string, unknown>): {
+import type { GrapheneDatabase } from "../db.js";
+export declare function handleGlobalWrite(db: GrapheneDatabase, args: Record<string, unknown>): {
     category: string;
     subject: string;
 };

@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../db.js";
 import type { IndexEntry, Fact, StaleNode } from "../types.js";
 import { getChangedFiles, getHead } from "../git.js";
 
@@ -10,8 +10,8 @@ interface StatusResult {
 }
 
 export function handleStatus(
-  repoDB: Database.Database,
-  globalDB: Database.Database,
+  repoDB: GrapheneDatabase,
+  globalDB: GrapheneDatabase,
   repoRoot: string,
   _args: Record<string, unknown>
 ): StatusResult {
@@ -19,7 +19,7 @@ export function handleStatus(
 
   const nodes = repoDB
     .prepare("SELECT name, type, summary FROM nodes ORDER BY name")
-    .all() as IndexEntry[];
+    .all() as unknown as IndexEntry[];
 
   const allNodes = repoDB
     .prepare("SELECT name, covers, last_commit FROM nodes")
@@ -48,7 +48,7 @@ export function handleStatus(
 
   const facts = globalDB
     .prepare("SELECT * FROM facts ORDER BY category, subject")
-    .all() as Fact[];
+    .all() as unknown as Fact[];
 
   return { head, nodes, stale_nodes: staleNodes, facts };
 }

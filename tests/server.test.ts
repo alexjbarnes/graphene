@@ -1,21 +1,23 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import Database from "better-sqlite3";
+import { describe, it, expect, beforeEach, beforeAll, afterEach } from "vitest";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { initRepoSchema, initGlobalSchema } from "../src/db.js";
+import { initSql, openMemoryDatabase, initRepoSchema, initGlobalSchema, type GrapheneDatabase } from "../src/db.js";
 import { createServer } from "../src/server.js";
 import { createTestGitRepo, type TestRepo } from "./helpers.js";
 
+beforeAll(async () => {
+  await initSql();
+});
+
 describe("server initialization", () => {
-  let repoDB: Database.Database;
-  let globalDB: Database.Database;
+  let repoDB: GrapheneDatabase;
+  let globalDB: GrapheneDatabase;
   let repo: TestRepo;
 
   beforeEach(() => {
-    repoDB = new Database(":memory:");
-    repoDB.pragma("foreign_keys = ON");
+    repoDB = openMemoryDatabase();
     initRepoSchema(repoDB);
-    globalDB = new Database(":memory:");
+    globalDB = openMemoryDatabase();
     initGlobalSchema(globalDB);
     repo = createTestGitRepo();
   });

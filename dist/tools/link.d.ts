@@ -1,5 +1,5 @@
-import type Database from "better-sqlite3";
-export declare function handleLink(db: Database.Database, args: Record<string, unknown>): {
+import type { GrapheneDatabase } from "../db.js";
+export declare function handleLink(db: GrapheneDatabase, args: Record<string, unknown>): {
     from: string;
     to: string;
     type: string;

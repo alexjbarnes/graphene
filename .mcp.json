@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "graphene": {
-      "command": "sh",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/start-server.sh"]
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/index.js"]
     }
   }
 }

@@ -1,8 +1,8 @@
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../db.js";
 import { BIDIRECTIONAL_EDGE_TYPES } from "../types.js";
 
 export function handleLink(
-  db: Database.Database,
+  db: GrapheneDatabase,
   args: Record<string, unknown>
 ): { from: string; to: string; type: string; bidirectional: boolean } {
   const from = args.from as string;

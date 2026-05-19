@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3";
-export declare function handleRemoveObservation(db: Database.Database, args: Record<string, unknown>): {
+import type { GrapheneDatabase } from "../db.js";
+export declare function handleRemoveObservation(db: GrapheneDatabase, args: Record<string, unknown>): {
     removed: boolean;
 };

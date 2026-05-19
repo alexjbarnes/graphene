@@ -1,18 +1,20 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import Database from "better-sqlite3";
-import { initRepoSchema } from "../../src/db.js";
+import { describe, it, expect, beforeEach, beforeAll, afterEach } from "vitest";
+import { initSql, openMemoryDatabase, initRepoSchema, type GrapheneDatabase } from "../../src/db.js";
 import { handleStale } from "../../src/tools/stale.js";
 import { handleUpsertNode } from "../../src/tools/upsert-node.js";
 import { createTestGitRepo, type TestRepo } from "../helpers.js";
 import { getHead } from "../../src/git.js";
 
+beforeAll(async () => {
+  await initSql();
+});
+
 describe("stale", () => {
-  let db: Database.Database;
+  let db: GrapheneDatabase;
   let repo: TestRepo;
 
   beforeEach(() => {
-    db = new Database(":memory:");
-    db.pragma("foreign_keys = ON");
+    db = openMemoryDatabase();
     initRepoSchema(db);
     repo = createTestGitRepo();
   });

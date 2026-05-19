@@ -1,7 +1,7 @@
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../db.js";
 
 export function handleRemoveObservation(
-  db: Database.Database,
+  db: GrapheneDatabase,
   args: Record<string, unknown>
 ): { removed: boolean } {
   const id = args.id as number | undefined;

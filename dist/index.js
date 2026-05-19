@@ -3,8 +3,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { getRepoRoot } from "./git.js";
-import { openDatabase, initRepoSchema, initGlobalSchema } from "./db.js";
+import { initSql, openDatabase, initRepoSchema, initGlobalSchema } from "./db.js";
 import { createServer } from "./server.js";
+await initSql();
 let repoRoot;
 try {
     repoRoot = getRepoRoot();

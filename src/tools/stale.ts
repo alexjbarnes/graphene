@@ -1,9 +1,9 @@
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../db.js";
 import type { StaleNode } from "../types.js";
 import { getChangedFiles } from "../git.js";
 
 export function handleStale(
-  db: Database.Database,
+  db: GrapheneDatabase,
   repoRoot: string,
   _args: Record<string, unknown>
 ): { stale_nodes: StaleNode[]; fresh_count: number; total_count: number } {

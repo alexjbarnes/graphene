@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../db.js";
 import { handleUpsertNode } from "./upsert-node.js";
 import { handleLink } from "./link.js";
 import { handleLearn } from "./learn.js";
@@ -19,7 +19,7 @@ interface BatchResult {
 const VALID_KEYS = new Set(["nodes", "edges", "observations"]);
 
 export function handleBatch(
-  db: Database.Database,
+  db: GrapheneDatabase,
   args: Record<string, unknown>
 ): BatchResult {
   const unknown = Object.keys(args).filter((k) => !VALID_KEYS.has(k));

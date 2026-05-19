@@ -1,7 +1,7 @@
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../db.js";
 
 export function handleLearn(
-  db: Database.Database,
+  db: GrapheneDatabase,
   args: Record<string, unknown>
 ): { id: number; node_name: string } {
   const nodeName = args.node_name as string;

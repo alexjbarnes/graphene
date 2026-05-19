@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../db.js";
 import type { IndexEntry, Fact, StaleNode } from "../types.js";
 interface StatusResult {
     head: string;
@@ -6,5 +6,5 @@ interface StatusResult {
     stale_nodes: StaleNode[];
     facts: Fact[];
 }
-export declare function handleStatus(repoDB: Database.Database, globalDB: Database.Database, repoRoot: string, _args: Record<string, unknown>): StatusResult;
+export declare function handleStatus(repoDB: GrapheneDatabase, globalDB: GrapheneDatabase, repoRoot: string, _args: Record<string, unknown>): StatusResult;
 export {};

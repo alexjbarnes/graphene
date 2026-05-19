@@ -1,45 +1,41 @@
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../db.js";
 import type { SearchResult } from "../types.js";
 
 export function handleSearch(
-  db: Database.Database,
+  db: GrapheneDatabase,
   args: Record<string, unknown>
 ): { results: SearchResult[] } {
   const query = args.query as string;
   if (!query) throw new Error("query is required");
 
+  const pattern = `%${query}%`;
   const results: SearchResult[] = [];
 
   const nodeMatches = db
     .prepare(
-      `SELECT n.name, n.type,
-              snippet(nodes_fts, 1, '<match>', '</match>', '...', 32) as snippet
-       FROM nodes_fts
-       JOIN nodes n ON n.rowid = nodes_fts.rowid
-       WHERE nodes_fts MATCH ?`
+      `SELECT name, type, summary
+       FROM nodes
+       WHERE name LIKE ? OR summary LIKE ?`
     )
-    .all(query) as Array<{
+    .all(pattern, pattern) as Array<{
     name: string;
     type: string;
-    snippet: string;
+    summary: string | null;
   }>;
 
   for (const m of nodeMatches) {
-    results.push({ type: "node", node_name: m.name, snippet: m.snippet });
+    results.push({ type: "node", node_name: m.name, snippet: m.summary ?? m.name });
   }
 
   const obsMatches = db
     .prepare(
-      `SELECT o.node_name,
-              snippet(observations_fts, 0, '<match>', '</match>', '...', 32) as snippet,
-              o.created_at
-       FROM observations_fts
-       JOIN observations o ON o.id = observations_fts.rowid
-       WHERE observations_fts MATCH ?`
+      `SELECT o.node_name, o.content, o.created_at
+       FROM observations o
+       WHERE o.content LIKE ?`
     )
-    .all(query) as Array<{
+    .all(pattern) as Array<{
     node_name: string;
-    snippet: string;
+    content: string;
     created_at: string;
   }>;
 
@@ -47,7 +43,7 @@ export function handleSearch(
     results.push({
       type: "observation",
       node_name: m.node_name,
-      snippet: m.snippet,
+      snippet: m.content,
       created_at: m.created_at,
     });
   }

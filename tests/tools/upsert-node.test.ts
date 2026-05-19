@@ -1,13 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../../src/db.js";
 import { createTestRepoDb } from "../helpers.js";
 import { handleUpsertNode } from "../../src/tools/upsert-node.js";
 
 describe("upsert_node", () => {
-  let db: Database.Database;
+  let db: GrapheneDatabase;
 
-  beforeEach(() => {
-    db = createTestRepoDb();
+  beforeEach(async () => {
+    db = await createTestRepoDb();
   });
 
   it("creates a node with all fields", () => {

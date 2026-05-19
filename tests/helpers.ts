@@ -1,19 +1,28 @@
-import Database from "better-sqlite3";
 import { execSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { initRepoSchema, initGlobalSchema } from "../src/db.js";
+import { initSql, openMemoryDatabase, initRepoSchema, initGlobalSchema, type GrapheneDatabase } from "../src/db.js";
 
-export function createTestRepoDb(): Database.Database {
-  const db = new Database(":memory:");
-  db.pragma("foreign_keys = ON");
+let initialized = false;
+
+async function ensureInit() {
+  if (!initialized) {
+    await initSql();
+    initialized = true;
+  }
+}
+
+export async function createTestRepoDb(): Promise<GrapheneDatabase> {
+  await ensureInit();
+  const db = openMemoryDatabase();
   initRepoSchema(db);
   return db;
 }
 
-export function createTestGlobalDb(): Database.Database {
-  const db = new Database(":memory:");
+export async function createTestGlobalDb(): Promise<GrapheneDatabase> {
+  await ensureInit();
+  const db = openMemoryDatabase();
   initGlobalSchema(db);
   return db;
 }

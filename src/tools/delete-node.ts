@@ -1,7 +1,7 @@
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../db.js";
 
 export function handleDeleteNode(
-  db: Database.Database,
+  db: GrapheneDatabase,
   args: Record<string, unknown>
 ): { deleted: boolean } {
   const name = args.name as string;

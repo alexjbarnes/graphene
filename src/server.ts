@@ -3,7 +3,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "./db.js";
 import { existsSync, readFileSync, appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { handleRead } from "./tools/read.js";
@@ -21,8 +21,8 @@ import { handleBatch } from "./tools/batch.js";
 import { handleStatus } from "./tools/status.js";
 
 export interface ServerContext {
-  repoDB: Database.Database | null;
-  globalDB: Database.Database;
+  repoDB: GrapheneDatabase | null;
+  globalDB: GrapheneDatabase;
   repoRoot: string | null;
 }
 
@@ -386,7 +386,7 @@ function ensureClaudeMd(repoRoot: string): void {
   writeFileSync(claudeMdPath, before + GRAPHENE_CLAUDE_MD.trimStart() + after);
 }
 
-function requireRepo(ctx: ServerContext): { repoDB: Database.Database; repoRoot: string } {
+function requireRepo(ctx: ServerContext): { repoDB: GrapheneDatabase; repoRoot: string } {
   if (!ctx.repoDB || !ctx.repoRoot) {
     throw new Error("Not in a git repository. Repo-specific tools are unavailable.");
   }

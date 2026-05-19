@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../../src/db.js";
 import { createTestGlobalDb } from "../helpers.js";
 import { handleGlobalRead } from "../../src/tools/global-read.js";
 import { handleGlobalWrite } from "../../src/tools/global-write.js";
 
 describe("global tools", () => {
-  let db: Database.Database;
+  let db: GrapheneDatabase;
 
-  beforeEach(() => {
-    db = createTestGlobalDb();
+  beforeEach(async () => {
+    db = await createTestGlobalDb();
   });
 
   describe("global_write", () => {
@@ -61,7 +61,7 @@ describe("global tools", () => {
   });
 
   describe("global_read", () => {
-    beforeEach(() => {
+    beforeEach(async () => {
       handleGlobalWrite(db, {
         category: "preference",
         subject: "testing",

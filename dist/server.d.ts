@@ -1,8 +1,8 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "./db.js";
 export interface ServerContext {
-    repoDB: Database.Database | null;
-    globalDB: Database.Database;
+    repoDB: GrapheneDatabase | null;
+    globalDB: GrapheneDatabase;
     repoRoot: string | null;
 }
 export declare function createServer(ctx: ServerContext): Server;

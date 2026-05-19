@@ -1,8 +1,8 @@
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../db.js";
 import type { IndexEntry, NodeDetail, EdgeWithNeighbor } from "../types.js";
 
 export function handleRead(
-  db: Database.Database,
+  db: GrapheneDatabase,
   args: Record<string, unknown>
 ): { nodes: IndexEntry[] } | NodeDetail {
   const name = args.name as string | undefined;
@@ -10,7 +10,7 @@ export function handleRead(
   if (!name) {
     const rows = db
       .prepare("SELECT name, type, summary FROM nodes ORDER BY name")
-      .all() as IndexEntry[];
+      .all() as unknown as IndexEntry[];
     return { nodes: rows };
   }
 
@@ -27,7 +27,7 @@ export function handleRead(
        JOIN nodes n ON n.name = e.to_node
        WHERE e.from_node = ?`
     )
-    .all(name) as EdgeWithNeighbor[];
+    .all(name) as unknown as EdgeWithNeighbor[];
 
   const incoming = db
     .prepare(
@@ -36,7 +36,7 @@ export function handleRead(
        JOIN nodes n ON n.name = e.from_node
        WHERE e.to_node = ?`
     )
-    .all(name) as EdgeWithNeighbor[];
+    .all(name) as unknown as EdgeWithNeighbor[];
 
   const observations = db
     .prepare(

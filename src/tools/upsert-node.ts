@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../db.js";
 
 interface UpsertNodeParams {
   name: string;
@@ -11,7 +11,7 @@ interface UpsertNodeParams {
 }
 
 export function handleUpsertNode(
-  db: Database.Database,
+  db: GrapheneDatabase,
   args: Record<string, unknown>
 ): { name: string; created: boolean } {
   const params = args as unknown as UpsertNodeParams;

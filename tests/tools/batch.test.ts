@@ -1,14 +1,14 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import type Database from "better-sqlite3";
+import type { GrapheneDatabase } from "../../src/db.js";
 import { createTestRepoDb } from "../helpers.js";
 import { handleBatch } from "../../src/tools/batch.js";
 import { handleRead } from "../../src/tools/read.js";
 
 describe("batch", () => {
-  let db: Database.Database;
+  let db: GrapheneDatabase;
 
-  beforeEach(() => {
-    db = createTestRepoDb();
+  beforeEach(async () => {
+    db = await createTestRepoDb();
   });
 
   it("creates nodes, edges, and observations in one call", () => {
