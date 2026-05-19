@@ -46,9 +46,14 @@ describe("batch", () => {
     expect(index.nodes).toHaveLength(0);
   });
 
-  it("handles empty arrays", () => {
-    const result = handleBatch(db, { nodes: [], edges: [], observations: [] });
-    expect(result.nodes_created).toBe(0);
+  it("rejects empty arrays", () => {
+    expect(() => handleBatch(db, { nodes: [], edges: [], observations: [] })).toThrow(
+      "at least one non-empty array"
+    );
+  });
+
+  it("rejects unknown keys", () => {
+    expect(() => handleBatch(db, { operations: [] })).toThrow("Unknown keys: operations");
   });
 
   it("handles missing arrays", () => {

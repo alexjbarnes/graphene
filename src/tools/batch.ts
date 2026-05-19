@@ -16,11 +16,24 @@ interface BatchResult {
   observations_added: number;
 }
 
+const VALID_KEYS = new Set(["nodes", "edges", "observations"]);
+
 export function handleBatch(
   db: Database.Database,
   args: Record<string, unknown>
 ): BatchResult {
+  const unknown = Object.keys(args).filter((k) => !VALID_KEYS.has(k));
+  if (unknown.length > 0) {
+    throw new Error(
+      `Unknown keys: ${unknown.join(", ")}. batch accepts three top-level arrays: nodes, edges, observations.`
+    );
+  }
   const params = args as unknown as BatchParams;
+  if (!params.nodes?.length && !params.edges?.length && !params.observations?.length) {
+    throw new Error(
+      "batch requires at least one non-empty array: nodes, edges, or observations."
+    );
+  }
   const result: BatchResult = {
     nodes_created: 0,
     nodes_updated: 0,

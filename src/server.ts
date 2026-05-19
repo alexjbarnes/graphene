@@ -229,24 +229,52 @@ const TOOLS = [
   {
     name: "batch",
     description:
-      "Create multiple nodes, edges, and observations in a single transaction. Use for initial population of a repo's context graph. Every node should include summary, covers, entry_points, and last_commit. Nodes without these fields provide little value.",
+      "Create or update multiple nodes, edges, and observations in a single transaction. Pass three top-level arrays: nodes, edges, observations. Each node object uses the same fields as upsert_node (name required, plus summary, covers, entry_points, last_commit). Every node should include summary, covers, entry_points, and last_commit.",
     inputSchema: {
       type: "object" as const,
       properties: {
         nodes: {
           type: "array",
-          items: { type: "object" },
-          description: "Array of node objects (same fields as upsert_node)",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "Node identifier (slug)" },
+              type: { type: "string", description: "Node type (e.g. subsystem, module)" },
+              summary: { type: "string", description: "One-line purpose statement" },
+              entry_points: { type: "array", items: { type: "string" }, description: "Key files" },
+              covers: { type: "array", items: { type: "string" }, description: "File/directory patterns" },
+              last_commit: { type: "string", description: "Commit hash" },
+              metadata: { type: "object", description: "Freeform structured data, shallow-merged on update" },
+            },
+            required: ["name"],
+          },
+          description: "Array of node objects to create or update",
         },
         edges: {
           type: "array",
-          items: { type: "object" },
-          description: "Array of edge objects (same fields as link)",
+          items: {
+            type: "object",
+            properties: {
+              from: { type: "string", description: "Source node name" },
+              to: { type: "string", description: "Target node name" },
+              type: { type: "string", description: "Relationship type (e.g. depends_on, extends)" },
+              reason: { type: "string", description: "Why this relationship exists" },
+            },
+            required: ["from", "to", "type"],
+          },
+          description: "Array of edge objects to create",
         },
         observations: {
           type: "array",
-          items: { type: "object" },
-          description: "Array of observation objects (same fields as learn)",
+          items: {
+            type: "object",
+            properties: {
+              node_name: { type: "string", description: "Node to attach observation to" },
+              content: { type: "string", description: "What was learned" },
+            },
+            required: ["node_name", "content"],
+          },
+          description: "Array of observations to record",
         },
       },
     },

@@ -13,7 +13,14 @@ const WRITE_TOOLS = new Set([
   "mcp__graphene__global_write",
 ]);
 
-const NUDGE_INTERVAL_MS = 30 * 60 * 1000;
+const READ_TOOLS = new Set([
+  "mcp__graphene__read",
+  "mcp__graphene__search",
+  "mcp__graphene__status",
+]);
+
+const SEARCH_PATTERN = /\b(grep|find|rg|ag|ack)\b/;
+const SEARCH_NUDGE_THRESHOLD = 5;
 
 async function main() {
   let input;
@@ -43,12 +50,18 @@ async function main() {
     if (WRITE_TOOLS.has(tool_name)) {
       state.last_write = new Date().toISOString();
     }
+    if (READ_TOOLS.has(tool_name)) {
+      state.searches_since_read = 0;
+    }
     writeState(session_id, state);
     process.exit(0);
   }
 
   if (hook_event_name === "PostToolUse" && tool_name === "Bash") {
     const command = tool_input?.command || "";
+    if (SEARCH_PATTERN.test(command)) {
+      state.searches_since_read = (state.searches_since_read || 0) + 1;
+    }
     if (/git\s+(commit|push)/.test(command)) {
       writeState(session_id, state);
       process.stdout.write(JSON.stringify({
@@ -82,23 +95,12 @@ async function main() {
       );
     }
 
-    if (state.status_called && state.last_write) {
-      const elapsed = Date.now() - new Date(state.last_write).getTime();
-      if (elapsed > NUDGE_INTERVAL_MS) {
-        messages.push(
-          "It has been over 30 minutes since you last updated the graphene context graph. " +
-          "Consider calling learn, upsert_node, or link to record what you have " +
-          "discovered or changed during this session."
-        );
-      }
-    } else if (state.status_called && !state.last_write && state.session_start) {
-      const elapsed = Date.now() - new Date(state.session_start).getTime();
-      if (elapsed > NUDGE_INTERVAL_MS) {
-        messages.push(
-          "You have been working for over 30 minutes without updating the graphene graph. " +
-          "If you have learned anything or made changes, record them with learn, upsert_node, or link."
-        );
-      }
+    if (state.status_called && (state.searches_since_read || 0) >= SEARCH_NUDGE_THRESHOLD) {
+      messages.push(
+        "You have used grep/find " + state.searches_since_read + " times without " +
+        "consulting the graphene graph. Call read(name) or search(query) to check " +
+        "if a node already covers what you are looking for."
+      );
     }
 
     writeState(session_id, state);
