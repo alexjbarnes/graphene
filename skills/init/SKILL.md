@@ -50,15 +50,19 @@ description: Populate the graphene context graph for a new repo. Use when the gr
 
 6. After creating nodes, add observations for anything non-obvious you noticed during exploration. Use `learn(node_name, content)` for each.
 
-## Migrate memory to graphene
+## Migrate ALL memory to graphene
 
-Check for existing memory files or CLAUDE.md entries that contain project knowledge. Migrate them:
+Graphene replaces auto-memory entirely. There is no valid reason to keep anything in memory files when graphene is installed. Check for memory files in `~/.claude/projects/*/memory/` and any CLAUDE.md entries that contain learned facts.
 
-- User preferences and workflow rules (e.g. "don't start dev server", "no parallel agents") go to `project_write(category, subject, content)` if repo-specific, or `global_write()` if they apply everywhere. If unsure which scope, ask the user.
-- Code knowledge (e.g. "auth middleware is in src/middleware, not src/auth") goes to `learn(node_name, content)` on the relevant node.
-- Project decisions and conventions (e.g. "NODE_ENV must not be set for builds") go to `project_write("convention", subject, content)`.
+You MUST migrate every memory file. No exceptions. Do not categorize some memories as "workflow preferences" and leave them in memory. The project_write and global_write tools exist precisely for non-code knowledge.
 
-After migrating, the memory files can be deleted. Graphene is the single source of truth.
+Migration targets:
+- **Workflow preferences** ("don't start dev server", "no parallel agents", "skip superpowers") -> `project_write("preference", subject, content)` if repo-specific, `global_write("preference", subject, content)` if cross-repo. If unsure, ask the user.
+- **Code knowledge** ("auth middleware is in src/middleware, not src/auth") -> `learn(node_name, content)` on the relevant node.
+- **Project decisions and conventions** ("NODE_ENV must not be set for builds") -> `project_write("convention", subject, content)`.
+- **User feedback and corrections** ("don't use mocks in tests", "prefer single PRs for refactors") -> `global_write("feedback", subject, content)` or `project_write("feedback", subject, content)`.
+
+After migrating every file, delete the memory files and clean up MEMORY.md. Two persistence systems means a future session has to check both places, which defeats the purpose.
 
 ## Guidelines
 
