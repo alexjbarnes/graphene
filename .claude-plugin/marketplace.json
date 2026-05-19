@@ -7,7 +7,7 @@
     {
       "name": "graphene",
       "description": "Persistent context graph for AI agents with behavioral enforcement",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "source": {
         "source": "url",
         "url": "https://github.com/alexjbarnes/graphene.git",
