@@ -197,7 +197,7 @@ describe("graphene-guard hook", () => {
         tool_input: { command: 'git commit -m "fix auth bug"' },
       });
       const output = parseOutput(stdout);
-      expect(output.hookSpecificOutput.additionalContext).toContain("git commit or push");
+      expect(output.hookSpecificOutput.additionalContext).toContain("You just committed code");
     });
 
     it("returns reminder on git push", () => {
@@ -208,7 +208,7 @@ describe("graphene-guard hook", () => {
         tool_input: { command: "git push origin main" },
       });
       const output = parseOutput(stdout);
-      expect(output.hookSpecificOutput.additionalContext).toContain("git commit or push");
+      expect(output.hookSpecificOutput.additionalContext).toContain("You just pushed code");
     });
 
     it("no output for non-git bash commands", () => {
@@ -229,68 +229,6 @@ describe("graphene-guard hook", () => {
         tool_input: { command: "git status && git diff" },
       });
       expect(stdout.trim()).toBe("");
-    });
-  });
-
-  describe("search counter nudge", () => {
-    it("increments searches_since_read on grep", () => {
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "mcp__graphene__status", tool_input: {} });
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "grep -r handleAuth src/" } });
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "grep TODO src/" } });
-      const { state } = run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "find . -name '*.ts'" } });
-      expect(state?.searches_since_read).toBe(3);
-    });
-
-    it("resets counter on graphene read", () => {
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "mcp__graphene__status", tool_input: {} });
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "grep -r foo src/" } });
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "grep -r bar src/" } });
-      const { state } = run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "mcp__graphene__read", tool_input: {} });
-      expect(state?.searches_since_read).toBe(0);
-    });
-
-    it("nudges after 5 searches without graphene read", () => {
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "mcp__graphene__status", tool_input: {} });
-      for (let i = 0; i < 5; i++) {
-        run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: `grep -r term${i} src/` } });
-      }
-      const { stdout } = run({ session_id: "s1", hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: {} });
-      const output = parseOutput(stdout);
-      expect(output.hookSpecificOutput.additionalContext).toContain("grep/find");
-      expect(output.hookSpecificOutput.additionalContext).toContain("5");
-    });
-
-    it("no nudge when under threshold", () => {
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "mcp__graphene__status", tool_input: {} });
-      for (let i = 0; i < 4; i++) {
-        run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: `grep -r term${i} src/` } });
-      }
-      const { stdout } = run({ session_id: "s1", hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: {} });
-      expect(stdout.trim()).toBe("");
-    });
-
-    it("does not count non-search bash commands", () => {
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "mcp__graphene__status", tool_input: {} });
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "npm test" } });
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "cat foo.ts" } });
-      const { state } = run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "ls -la" } });
-      expect(state?.searches_since_read).toBe(0);
-    });
-
-    it("does not count git commands with find-like flags", () => {
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "mcp__graphene__status", tool_input: {} });
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "git diff --find-renames" } });
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "git log --all" } });
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "git status" } });
-      const { state } = run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "git push origin main" } });
-      expect(state?.searches_since_read).toBe(0);
-    });
-
-    it("counts find/grep after pipes", () => {
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "mcp__graphene__status", tool_input: {} });
-      run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "cat file.ts | grep pattern" } });
-      const { state } = run({ session_id: "s1", hook_event_name: "PostToolUse", tool_name: "Bash", tool_input: { command: "find . -name '*.ts' | grep test" } });
-      expect(state?.searches_since_read).toBe(2);
     });
   });
 

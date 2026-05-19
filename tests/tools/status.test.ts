@@ -61,6 +61,19 @@ describe("status", () => {
     expect(result.stale_nodes).toEqual([]);
     expect(result.project_facts).toEqual([]);
     expect(result.global_facts).toEqual([]);
+    expect(result.observations_by_node).toEqual({});
+  });
+
+  it("includes recent observations per node", () => {
+    const commit = getHead(repo.path);
+    handleUpsertNode(repoDB, { name: "auth", type: "subsystem", last_commit: commit });
+
+    repoDB.prepare("INSERT INTO observations (node_name, content) VALUES (?, ?)").run("auth", "uses JWT tokens");
+    repoDB.prepare("INSERT INTO observations (node_name, content) VALUES (?, ?)").run("auth", "middleware in router.ts");
+
+    const result = handleStatus(repoDB, globalDB, repo.path, {});
+    expect(result.observations_by_node["auth"]).toHaveLength(2);
+    expect(result.observations_by_node["auth"]).toContain("uses JWT tokens");
   });
 
   it("includes project facts", () => {

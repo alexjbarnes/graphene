@@ -18,7 +18,6 @@ export function readState(sessionId) {
     last_interaction: null,
     last_write: null,
     session_start: new Date().toISOString(),
-    searches_since_read: 0,
   };
 
   try {

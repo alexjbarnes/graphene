@@ -8,6 +8,7 @@ interface StatusResult {
   stale_nodes: StaleNode[];
   project_facts: Fact[];
   global_facts: Fact[];
+  observations_by_node: Record<string, string[]>;
 }
 
 export function handleStatus(
@@ -55,5 +56,24 @@ export function handleStatus(
     .prepare("SELECT * FROM facts ORDER BY category, subject")
     .all() as unknown as Fact[];
 
-  return { head, nodes, stale_nodes: staleNodes, project_facts: projectFacts, global_facts: globalFacts };
+  const observations = repoDB
+    .prepare("SELECT node_name, content FROM observations ORDER BY created_at DESC")
+    .all() as unknown as Array<{ node_name: string; content: string }>;
+
+  const observationsByNode: Record<string, string[]> = {};
+  for (const obs of observations) {
+    if (!observationsByNode[obs.node_name]) observationsByNode[obs.node_name] = [];
+    if (observationsByNode[obs.node_name].length < 3) {
+      observationsByNode[obs.node_name].push(obs.content);
+    }
+  }
+
+  return {
+    head,
+    nodes,
+    stale_nodes: staleNodes,
+    project_facts: projectFacts,
+    global_facts: globalFacts,
+    observations_by_node: observationsByNode,
+  };
 }

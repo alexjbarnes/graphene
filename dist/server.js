@@ -309,10 +309,11 @@ export function createServer(ctx) {
     const server = new Server({ name: "graphene", version: "0.1.0" }, {
         capabilities: { tools: {} },
         instructions: [
-            "Graph status is automatically injected at session start. You do not need to call `status` manually.",
-            "Before working on any subsystem, call `read(name)` on the relevant node for entry_points, observations, and edges.",
-            "If the graph is empty, explore the codebase and populate with `batch()`.",
-            "Tool guide: `learn(node, content)` for code knowledge on a node. `project_write(category, subject, content)` for repo-specific conventions and decisions. `global_write(category, subject, content)` for preferences that apply across all repos. If unsure whether something is project-scoped or global, ask the user. After changing code, update `last_commit` on affected nodes.",
+            "Graph status is automatically injected at session start. You do not need to call `status` manually unless you want to refresh.",
+            "You MUST call `read(name)` on relevant nodes before working on any subsystem. Do not start reading files, grepping, or exploring until you have checked the graph.",
+            "If the graph is empty, you MUST explore the codebase and populate with `batch()` before doing anything else.",
+            "After changing code, you MUST update affected graphene nodes: record observations with `learn()`, update `summary` if purpose changed, update `entry_points` if files changed, and set `last_commit` to current HEAD. Updating `last_commit` alone is not sufficient.",
+            "Tool scope: `learn(node, content)` for code knowledge on a node. `project_write(category, subject, content)` for repo-specific conventions. `global_write(category, subject, content)` for user preferences across repos. If unsure about scope, ask the user.",
         ].join("\n\n"),
     });
     server.setRequestHandler(ListToolsRequestSchema, async () => ({
@@ -346,7 +347,12 @@ const GRAPHENE_CLAUDE_MD = `
 ${GRAPHENE_MARKER}
 ## Graphene Context Graph
 
-This project has a persistent context graph. The graph status is automatically injected at session start. You do not need to call status manually.
+This project has a persistent context graph. The graph status is automatically injected at session start. You MUST read relevant nodes before working on any subsystem.
+
+### Before you start
+1. Read the injected status (automatic on first tool call)
+2. Call \`read(name)\` on every node relevant to your task
+3. Only then start reading files or grepping
 
 ### Reading
 - \`read(name)\` - get node detail: entry_points, observations, edges
@@ -356,17 +362,27 @@ This project has a persistent context graph. The graph status is automatically i
 - \`learn(node, content)\` - record code knowledge on a node (where things live, gotchas, patterns)
 - \`project_write(category, subject, content)\` - record repo-specific conventions, decisions, context
 - \`global_write(category, subject, content)\` - record preferences that apply across all repos. If unsure whether something is project or global, ask the user.
-- \`upsert_node(name, {last_commit: "HEAD"})\` - update a node after changing its code
+- \`upsert_node(name, fields)\` - update a node after changing its code
 - \`link(from, to, type, reason)\` - record relationships between subsystems
 
-### When to write
-- After changing code: update \`last_commit\` on affected nodes
-- After discovering something non-obvious: \`learn()\` it
-- After spending 3+ tool calls finding something: record where you found it
-- Project conventions and decisions: \`project_write()\`
+### After changing code (mandatory)
+1. Record what changed with \`learn(node, observation)\`
+2. Update \`summary\` if the purpose shifted
+3. Update \`entry_points\` and \`covers\` if files were added/renamed
+4. Set \`last_commit\` to current HEAD
+Bumping \`last_commit\` alone is not sufficient.
 
 ### Empty graph
 If the graph has no nodes, use \`/graphene:init\` or populate with \`batch()\`. Every node needs summary, covers, entry_points, and last_commit.
+
+### Red flags (you are rationalizing if you think these)
+| Thought | Reality |
+|---------|---------|
+| "I already know this codebase" | You do not. Read the graph. Prior sessions recorded what they found. |
+| "I'll just grep for it" | Check the graph first. The answer may already be there. |
+| "I'll update graphene later" | No. Update as you go. You will forget. |
+| "I'll just bump last_commit" | Not enough. Review and update observations, summary, entry_points. |
+| "This change is too small to record" | Small discoveries compound. Record it. |
 ${GRAPHENE_MARKER_END}
 `;
 function ensureClaudeMd(repoRoot) {

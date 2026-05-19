@@ -27,6 +27,24 @@ export function handleStatus(repoDB, globalDB, repoRoot, _args) {
     const globalFacts = globalDB
         .prepare("SELECT * FROM facts ORDER BY category, subject")
         .all();
-    return { head, nodes, stale_nodes: staleNodes, project_facts: projectFacts, global_facts: globalFacts };
+    const observations = repoDB
+        .prepare("SELECT node_name, content FROM observations ORDER BY created_at DESC")
+        .all();
+    const observationsByNode = {};
+    for (const obs of observations) {
+        if (!observationsByNode[obs.node_name])
+            observationsByNode[obs.node_name] = [];
+        if (observationsByNode[obs.node_name].length < 3) {
+            observationsByNode[obs.node_name].push(obs.content);
+        }
+    }
+    return {
+        head,
+        nodes,
+        stale_nodes: staleNodes,
+        project_facts: projectFacts,
+        global_facts: globalFacts,
+        observations_by_node: observationsByNode,
+    };
 }
 //# sourceMappingURL=status.js.map

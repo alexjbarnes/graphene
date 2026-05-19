@@ -41,20 +41,75 @@ async function getStatus(repoRoot) {
   }
 }
 
+async function getAffectedNodes(repoRoot) {
+  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || join(import.meta.dirname, "..");
+  const { initSql, openDatabase, initRepoSchema } =
+    await import(join(pluginRoot, "dist", "db.js"));
+
+  const repoDbPath = join(repoRoot, ".graphene", "context.db");
+  if (!existsSync(repoDbPath)) return [];
+
+  await initSql();
+
+  const repoDB = openDatabase(repoDbPath);
+  initRepoSchema(repoDB);
+
+  try {
+    let committedFiles;
+    try {
+      committedFiles = execSync("git diff-tree --no-commit-id --name-only -r HEAD", {
+        cwd: repoRoot,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim().split("\n").filter(Boolean);
+    } catch {
+      return [];
+    }
+
+    if (committedFiles.length === 0) return [];
+
+    const nodes = repoDB.prepare("SELECT name, covers FROM nodes").all();
+
+    const affected = [];
+    for (const node of nodes) {
+      const covers = JSON.parse(node.covers || "[]");
+      if (covers.length === 0) continue;
+
+      const matching = committedFiles.filter(file =>
+        covers.some(pattern => file.startsWith(pattern.replace(/\*.*$/, "")))
+      );
+
+      if (matching.length > 0) {
+        affected.push({ name: node.name, files: matching });
+      }
+    }
+
+    return affected;
+  } finally {
+    repoDB.close();
+  }
+}
+
 function formatStatus(status) {
   const lines = [`HEAD: ${status.head}`];
 
   if (status.nodes.length === 0) {
-    lines.push("Graph: empty (no nodes). Populate with batch() after exploring.");
+    lines.push("Graph: empty (no nodes). You MUST populate with batch() after exploring the codebase.");
   } else {
     lines.push(`Nodes (${status.nodes.length}):`);
     for (const n of status.nodes) {
       lines.push(`  - ${n.name} [${n.type}]${n.summary ? ": " + n.summary : ""}`);
+      const obs = status.observations_by_node?.[n.name];
+      if (obs && obs.length > 0) {
+        for (const o of obs) {
+          lines.push(`      * ${o}`);
+        }
+      }
     }
   }
 
   if (status.stale_nodes.length > 0) {
-    lines.push(`Stale (${status.stale_nodes.length}):`);
+    lines.push(`STALE nodes (${status.stale_nodes.length}) - you MUST update these before working on them:`);
     for (const s of status.stale_nodes) {
       const detail = s.reason === "changed" ? ` (${s.changed_files.join(", ")})` : "";
       lines.push(`  - ${s.name}: ${s.reason}${detail}`);
@@ -92,15 +147,6 @@ const WRITE_TOOLS = new Set([
   "mcp__graphene__project_delete",
 ]);
 
-const READ_TOOLS = new Set([
-  "mcp__graphene__read",
-  "mcp__graphene__search",
-  "mcp__graphene__status",
-]);
-
-const SEARCH_PATTERN = /(?:^|[|;&]\s*)(grep|find|rg|ag|ack)\b/;
-const SEARCH_NUDGE_THRESHOLD = 5;
-
 async function main() {
   let input;
   try {
@@ -129,27 +175,48 @@ async function main() {
     if (WRITE_TOOLS.has(tool_name)) {
       state.last_write = new Date().toISOString();
     }
-    if (READ_TOOLS.has(tool_name)) {
-      state.searches_since_read = 0;
-    }
     writeState(session_id, state);
     process.exit(0);
   }
 
   if (hook_event_name === "PostToolUse" && tool_name === "Bash") {
     const command = tool_input?.command || "";
-    if (SEARCH_PATTERN.test(command)) {
-      state.searches_since_read = (state.searches_since_read || 0) + 1;
-    }
-    if (/git\s+(commit|push)/.test(command)) {
+
+    if (/git\s+commit/.test(command)) {
+      const repoRoot = getRepoRoot();
+      let message = "You just committed code.";
+
+      if (repoRoot) {
+        try {
+          const affected = await getAffectedNodes(repoRoot);
+          if (affected.length > 0) {
+            message += "\n\nThese graphene nodes cover files in this commit:" +
+              affected.map(a => `\n  - ${a.name} (${a.files.join(", ")})`).join("") +
+              "\n\nYou MUST review and update each affected node:" +
+              "\n  1. Record what changed with learn(node, observation)" +
+              "\n  2. Update summary if the purpose shifted" +
+              "\n  3. Update entry_points and covers if files were added/renamed" +
+              "\n  4. Set last_commit to the new HEAD" +
+              "\nBumping last_commit alone is not sufficient.";
+          }
+        } catch {}
+      }
+
+      writeState(session_id, state);
+      process.stdout.write(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "PostToolUse",
+          additionalContext: message,
+        },
+      }));
+    } else if (/git\s+push/.test(command)) {
       writeState(session_id, state);
       process.stdout.write(JSON.stringify({
         hookSpecificOutput: {
           hookEventName: "PostToolUse",
           additionalContext:
-            "You just ran a git commit or push. Review the affected graphene nodes: " +
-            "update last_commit to the new HEAD, record any non-obvious discoveries " +
-            "with learn, and update edges if relationships between subsystems changed.",
+            "You just pushed code. Verify all graphene nodes affected by " +
+            "pushed commits have updated observations and last_commit.",
         },
       }));
     } else {
@@ -179,20 +246,13 @@ async function main() {
         messages.push(
           "Graphene context graph for this repo:\n" +
           formatStatus(status) + "\n\n" +
-          "Use read(name) to get detail on any node. " +
-          "Use learn/upsert_node/batch to record discoveries."
+          "You MUST call read(name) on relevant nodes before working on any subsystem. " +
+          "The graph contains entry_points, observations, and edges that prevent wasted tool calls. " +
+          "After changing code, you MUST update affected nodes with learn() and last_commit."
         );
       } catch {
         state.status_injected = true;
       }
-    }
-
-    if (state.status_injected && (state.searches_since_read || 0) >= SEARCH_NUDGE_THRESHOLD) {
-      messages.push(
-        "You have used grep/find " + state.searches_since_read + " times without " +
-        "consulting the graphene graph. Call read(name) or search(query) to check " +
-        "if a node already covers what you are looking for."
-      );
     }
 
     writeState(session_id, state);
