@@ -22,7 +22,7 @@ import { readState, writeState, cleanupStaleSessions, getStatePath } from "../..
 describe("state module", () => {
   it("returns defaults when no state file exists", () => {
     const state = readState("test-session");
-    expect(state.status_called).toBe(false);
+    expect(state.status_injected).toBe(false);
     expect(state.last_interaction).toBeNull();
     expect(state.last_write).toBeNull();
     expect(state.session_start).toBeTruthy();
@@ -30,21 +30,21 @@ describe("state module", () => {
 
   it("writes and reads state", () => {
     const state = {
-      status_called: true,
+      status_injected: true,
       last_interaction: "2026-01-01T00:00:00.000Z",
       last_write: "2026-01-01T00:00:00.000Z",
       session_start: "2026-01-01T00:00:00.000Z",
     };
     writeState("test-session", state);
     const loaded = readState("test-session");
-    expect(loaded.status_called).toBe(true);
+    expect(loaded.status_injected).toBe(true);
     expect(loaded.last_write).toBe("2026-01-01T00:00:00.000Z");
   });
 
   it("creates sessions directory if missing", () => {
     const sessionsDir = join(tempHome, ".graphene", "sessions");
     expect(existsSync(sessionsDir)).toBe(false);
-    writeState("test-session", { status_called: false });
+    writeState("test-session", { status_injected: false });
     expect(existsSync(sessionsDir)).toBe(true);
   });
 
@@ -53,12 +53,12 @@ describe("state module", () => {
     mkdirSync(sessionsDir, { recursive: true });
     writeFileSync(join(sessionsDir, "bad-session.json"), "not json{{{");
     const state = readState("bad-session");
-    expect(state.status_called).toBe(false);
+    expect(state.status_injected).toBe(false);
   });
 
   it("cleans up old session files", () => {
-    writeState("old-session", { status_called: true });
-    writeState("new-session", { status_called: true });
+    writeState("old-session", { status_injected: true });
+    writeState("new-session", { status_injected: true });
 
     const oldPath = getStatePath("old-session");
     const past = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);

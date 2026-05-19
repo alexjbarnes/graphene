@@ -14,7 +14,7 @@ export function getStatePath(sessionId) {
 
 export function readState(sessionId) {
   const defaults = {
-    status_called: false,
+    status_injected: false,
     last_interaction: null,
     last_write: null,
     session_start: new Date().toISOString(),
