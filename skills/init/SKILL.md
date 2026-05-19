@@ -54,7 +54,7 @@ description: Populate the graphene context graph for a new repo. Use when the gr
 
 Check for existing memory files or CLAUDE.md entries that contain project knowledge. Migrate them:
 
-- User preferences and workflow rules (e.g. "don't start dev server", "no parallel agents") go to `project_write(category, subject, content)` if repo-specific, or `global_write()` if they apply everywhere.
+- User preferences and workflow rules (e.g. "don't start dev server", "no parallel agents") go to `project_write(category, subject, content)` if repo-specific, or `global_write()` if they apply everywhere. If unsure which scope, ask the user.
 - Code knowledge (e.g. "auth middleware is in src/middleware, not src/auth") goes to `learn(node_name, content)` on the relevant node.
 - Project decisions and conventions (e.g. "NODE_ENV must not be set for builds") go to `project_write("convention", subject, content)`.
 

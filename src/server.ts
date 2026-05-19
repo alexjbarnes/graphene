@@ -346,7 +346,7 @@ export function createServer(ctx: ServerContext): Server {
         "Graph status is automatically injected at session start. You do not need to call `status` manually.",
         "Before working on any subsystem, call `read(name)` on the relevant node for entry_points, observations, and edges.",
         "If the graph is empty, explore the codebase and populate with `batch()`.",
-        "Tool guide: `learn(node, content)` for code knowledge on a node. `project_write(category, subject, content)` for repo-specific conventions and decisions. `global_write(category, subject, content)` for preferences that apply across all repos. After changing code, update `last_commit` on affected nodes.",
+        "Tool guide: `learn(node, content)` for code knowledge on a node. `project_write(category, subject, content)` for repo-specific conventions and decisions. `global_write(category, subject, content)` for preferences that apply across all repos. If unsure whether something is project-scoped or global, ask the user. After changing code, update `last_commit` on affected nodes.",
       ].join("\n\n"),
     }
   );
@@ -394,7 +394,7 @@ This project has a persistent context graph. The graph status is automatically i
 ### Writing
 - \`learn(node, content)\` - record code knowledge on a node (where things live, gotchas, patterns)
 - \`project_write(category, subject, content)\` - record repo-specific conventions, decisions, context
-- \`global_write(category, subject, content)\` - record preferences that apply across all repos
+- \`global_write(category, subject, content)\` - record preferences that apply across all repos. If unsure whether something is project or global, ask the user.
 - \`upsert_node(name, {last_commit: "HEAD"})\` - update a node after changing its code
 - \`link(from, to, type, reason)\` - record relationships between subsystems
 
