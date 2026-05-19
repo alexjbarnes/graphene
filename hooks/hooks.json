@@ -1,16 +1,5 @@
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "test -f \"${CLAUDE_PLUGIN_ROOT}/node_modules/better-sqlite3/build/Release/better_sqlite3.node\" || (cd \"${CLAUDE_PLUGIN_ROOT}\" && npm install --production 2>/dev/null)",
-            "timeout": 60
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "",
