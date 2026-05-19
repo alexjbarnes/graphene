@@ -440,7 +440,7 @@ function ensureClaudeMd(repoRoot: string): void {
   }
 
   const startIndex = content.indexOf(GRAPHENE_MARKER);
-  const endIndex = content.indexOf(GRAPHENE_MARKER_END);
+  const endIndex = content.lastIndexOf(GRAPHENE_MARKER_END);
 
   const before = content.slice(0, startIndex);
   const after = endIndex !== -1
