@@ -55,10 +55,11 @@ export interface IndexEntry {
     summary: string | null;
 }
 export interface SearchResult {
-    type: "node" | "observation";
+    type: "node" | "observation" | "project_fact" | "global_fact" | "edge";
     node_name: string;
     snippet: string;
     created_at?: string;
+    score?: number;
 }
 export interface StaleNode {
     name: string;

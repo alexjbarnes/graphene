@@ -43,7 +43,7 @@ const TOOLS = [
     },
     {
         name: "search",
-        description: "Full-text search across node names, summaries, and observations.",
+        description: "Search across nodes, observations, project facts, global facts, and edge reasons. Multi-word queries match any word and rank by relevance.",
         inputSchema: {
             type: "object",
             properties: {
@@ -360,14 +360,28 @@ ${GRAPHENE_MARKER}
 - The user corrected you or stated a preference: \`project_write()\` if repo-specific, \`global_write()\` if cross-repo. If unsure, ask.
 - You spent 3+ tool calls finding something: record where you found it
 
-### Tool reference
-- \`read(name)\` - node detail: entry_points, observations, edges
-- \`search(query)\` - find across nodes and observations
-- \`learn(node, content)\` - record knowledge on a node
-- \`project_write(category, subject, content)\` - repo-specific conventions, decisions, preferences
-- \`global_write(category, subject, content)\` - cross-repo user preferences
-- \`upsert_node(name, fields)\` - update node fields after code changes
-- \`link(from, to, type, reason)\` - record subsystem relationships
+### Tools: reading
+- \`status()\` - auto-injected at session start. Call manually to refresh.
+- \`read()\` - no args returns full node index. \`read(name)\` returns node detail: entry_points, observations, edges, dependents.
+- \`search(query)\` - search across nodes, observations, project facts, global facts, and edge reasons. Multi-word queries match any word, ranked by relevance.
+- \`stale()\` - check which nodes have changed files since their last_commit.
+- \`project_read(category?, subject?)\` - read project facts. No args returns all.
+- \`global_read(category?, subject?)\` - read global facts. No args returns all.
+
+### Tools: recording
+- \`learn(node, content)\` - append an observation to a node. Use for code knowledge, gotchas, boundaries.
+- \`upsert_node(name, fields)\` - create or update a node. Fields: summary, covers, entry_points, last_commit, metadata, type. Only provided fields change on update.
+- \`link(from, to, type, reason)\` - create edge. Types: depends_on, extends, related_to, mirrors. related_to and mirrors are bidirectional.
+- \`batch({nodes, edges, observations})\` - bulk create/update in one transaction.
+- \`project_write(category, subject, content)\` - repo-specific conventions, decisions, preferences.
+- \`global_write(category, subject, content)\` - cross-repo user preferences.
+
+### Tools: cleanup
+- \`remove_observation(id)\` - delete a wrong or outdated observation (ID from read response).
+- \`unlink(from, to, type?)\` - remove an edge. Omit type to remove all edges between the pair.
+- \`delete_node(name)\` - remove a node and all its edges and observations.
+- \`project_delete(category, subject)\` - remove a project fact.
+- \`global_delete(category, subject)\` - remove a global fact.
 
 ### Red flags (you are rationalizing if you think these)
 | Thought | Reality |
@@ -422,7 +436,7 @@ function dispatch(ctx, tool, args) {
                 case "read":
                     return handleRead(repoDB, args);
                 case "search":
-                    return handleSearch(repoDB, args);
+                    return handleSearch(repoDB, ctx.globalDB, args);
                 case "upsert_node":
                     return handleUpsertNode(repoDB, args);
                 case "learn":

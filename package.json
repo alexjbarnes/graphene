@@ -1,6 +1,6 @@
 {
   "name": "graphene",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Persistent context graph for AI agents",
   "type": "module",
   "main": "dist/index.js",
