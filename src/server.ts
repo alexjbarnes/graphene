@@ -346,7 +346,7 @@ export function createServer(ctx: ServerContext): Server {
         "Graph status is automatically injected at session start. You do not need to call `status` manually unless you want to refresh.",
         "You MUST call `read(name)` on relevant nodes before working on any subsystem. Do not start reading files, grepping, or exploring until you have checked the graph.",
         "If the graph is empty, you MUST explore the codebase and populate with `batch()` before doing anything else.",
-        "After changing code, you MUST update affected graphene nodes: record observations with `learn()`, update `summary` if purpose changed, update `entry_points` if files changed, and set `last_commit` to current HEAD. Updating `last_commit` alone is not sufficient.",
+        "Record immediately, do not defer: after changing code, update affected nodes with `learn()`, summary, entry_points, and `last_commit`. When you discover an architectural boundary, constraint, gotcha, or workaround, record it with `learn()` or `project_write()`. When the user corrects your approach or gives a preference, record it with `project_write()` or `global_write()`. Updating `last_commit` alone is not sufficient.",
         "Tool scope: `learn(node, content)` for code knowledge on a node. `project_write(category, subject, content)` for repo-specific conventions and preferences. `global_write(category, subject, content)` for user preferences across repos. If unsure about scope, ask the user.",
         "Graphene replaces auto-memory. Do NOT write to memory files when graphene is installed. All facts, preferences, conventions, and workflow rules go into graphene via `project_write`, `global_write`, or `learn`. Two persistence systems means future sessions must check both places, which defeats the purpose.",
       ].join("\n\n"),
@@ -405,12 +405,14 @@ This project has a persistent context graph. The graph status is automatically i
 - \`upsert_node(name, fields)\` - update a node after changing its code
 - \`link(from, to, type, reason)\` - record relationships between subsystems
 
-### After changing code (mandatory)
-1. Record what changed with \`learn(node, observation)\`
-2. Update \`summary\` if the purpose shifted
-3. Update \`entry_points\` and \`covers\` if files were added/renamed
-4. Set \`last_commit\` to current HEAD
-Bumping \`last_commit\` alone is not sufficient.
+### Recording triggers (immediate, do not defer)
+- You changed code -> update the affected node (observations, summary, entry_points, last_commit)
+- You discovered an architectural boundary or constraint -> \`learn(node, observation)\` or \`project_write()\`
+- You hit a gotcha, workaround, or surprising behavior -> \`learn(node, observation)\`
+- The user corrected your approach or gave a preference -> \`project_write()\` or \`global_write()\`
+- You spent 3+ tool calls finding something -> record where you found it
+
+Bumping \`last_commit\` alone is not sufficient. Record what you learned, not just that you were here.
 
 ### Empty graph
 If the graph has no nodes, use \`/graphene:init\` or populate with \`batch()\`. Every node needs summary, covers, entry_points, and last_commit.
@@ -423,6 +425,7 @@ If the graph has no nodes, use \`/graphene:init\` or populate with \`batch()\`. 
 | "I'll update graphene later" | No. Update as you go. You will forget. |
 | "I'll just bump last_commit" | Not enough. Review and update observations, summary, entry_points. |
 | "This change is too small to record" | Small discoveries compound. Record it. |
+| "This is just a fix, not a discovery" | Constraints and boundaries ARE discoveries. Record them. |
 | "I'll keep this in memory instead" | No. Graphene replaces memory. Use project_write or global_write. |
 ${GRAPHENE_MARKER_END}
 `;
