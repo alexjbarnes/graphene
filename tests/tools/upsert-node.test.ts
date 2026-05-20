@@ -21,7 +21,7 @@ describe("upsert_node", () => {
       metadata: { interfaces: ["login", "logout"] },
     });
 
-    expect(result).toEqual({ name: "auth", created: true });
+    expect(result).toEqual({ name: "auth", status: "created" });
 
     const row = db.prepare("SELECT * FROM nodes WHERE name = ?").get("auth") as Record<string, unknown>;
     expect(row.type).toBe("subsystem");
@@ -36,7 +36,7 @@ describe("upsert_node", () => {
 
   it("creates a node with minimal fields", () => {
     const result = handleUpsertNode(db, { name: "api", type: "module" });
-    expect(result).toEqual({ name: "api", created: true });
+    expect(result).toEqual({ name: "api", status: "created" });
 
     const row = db.prepare("SELECT * FROM nodes WHERE name = ?").get("api") as Record<string, unknown>;
     expect(row.summary).toBeNull();
@@ -90,6 +90,6 @@ describe("upsert_node", () => {
       name: "auth",
       summary: "Updated",
     });
-    expect(result).toEqual({ name: "auth", created: false });
+    expect(result).toEqual({ name: "auth", status: "updated", fields_updated: ["summary"] });
   });
 });

@@ -10,10 +10,16 @@ interface UpsertNodeParams {
   metadata?: Record<string, unknown>;
 }
 
+interface UpsertResult {
+  name: string;
+  status: "created" | "updated" | "unchanged";
+  fields_updated?: string[];
+}
+
 export function handleUpsertNode(
   db: GrapheneDatabase,
   args: Record<string, unknown>
-): { name: string; created: boolean } {
+): UpsertResult {
   const params = args as unknown as UpsertNodeParams;
   if (!params.name) throw new Error("name is required");
 
@@ -37,46 +43,55 @@ export function handleUpsertNode(
       JSON.stringify(params.metadata ?? {})
     );
 
-    return { name: params.name, created: true };
+    return { name: params.name, status: "created" };
   }
 
   const updates: string[] = [];
   const values: unknown[] = [];
+  const fieldsUpdated: string[] = [];
 
   if (params.type !== undefined) {
     updates.push("type = ?");
     values.push(params.type);
+    fieldsUpdated.push("type");
   }
   if (params.summary !== undefined) {
     updates.push("summary = ?");
     values.push(params.summary);
+    fieldsUpdated.push("summary");
   }
   if (params.entry_points !== undefined) {
     updates.push("entry_points = ?");
     values.push(JSON.stringify(params.entry_points));
+    fieldsUpdated.push("entry_points");
   }
   if (params.covers !== undefined) {
     updates.push("covers = ?");
     values.push(JSON.stringify(params.covers));
+    fieldsUpdated.push("covers");
   }
   if (params.last_commit !== undefined) {
     updates.push("last_commit = ?");
     values.push(params.last_commit);
+    fieldsUpdated.push("last_commit");
   }
   if (params.metadata !== undefined) {
     const existingMeta = JSON.parse(existing.metadata || "{}");
     const merged = { ...existingMeta, ...params.metadata };
     updates.push("metadata = ?");
     values.push(JSON.stringify(merged));
+    fieldsUpdated.push("metadata");
   }
 
-  if (updates.length > 0) {
-    updates.push("updated_at = datetime('now')");
-    values.push(params.name);
-    db.prepare(`UPDATE nodes SET ${updates.join(", ")} WHERE name = ?`).run(
-      ...values
-    );
+  if (updates.length === 0) {
+    return { name: params.name, status: "unchanged" };
   }
 
-  return { name: params.name, created: false };
+  updates.push("updated_at = datetime('now')");
+  values.push(params.name);
+  db.prepare(`UPDATE nodes SET ${updates.join(", ")} WHERE name = ?`).run(
+    ...values
+  );
+
+  return { name: params.name, status: "updated", fields_updated: fieldsUpdated };
 }

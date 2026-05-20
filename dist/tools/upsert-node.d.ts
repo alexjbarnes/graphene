@@ -1,5 +1,8 @@
 import type { GrapheneDatabase } from "../db.js";
-export declare function handleUpsertNode(db: GrapheneDatabase, args: Record<string, unknown>): {
+interface UpsertResult {
     name: string;
-    created: boolean;
-};
+    status: "created" | "updated" | "unchanged";
+    fields_updated?: string[];
+}
+export declare function handleUpsertNode(db: GrapheneDatabase, args: Record<string, unknown>): UpsertResult;
+export {};

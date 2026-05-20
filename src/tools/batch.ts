@@ -45,7 +45,7 @@ export function handleBatch(
     if (params.nodes) {
       for (const node of params.nodes) {
         const r = handleUpsertNode(db, node);
-        if (r.created) result.nodes_created++;
+        if (r.status === "created") result.nodes_created++;
         else result.nodes_updated++;
       }
     }
