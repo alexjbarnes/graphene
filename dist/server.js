@@ -348,35 +348,26 @@ const GRAPHENE_CLAUDE_MD = `
 ${GRAPHENE_MARKER}
 ## Graphene Context Graph
 
-This project has a persistent context graph. The graph status is automatically injected at session start. You MUST read relevant nodes before working on any subsystem.
+### Rules
+1. Do NOT read files, grep, or explore until you have called \`read(name)\` on every relevant node. The graph status is injected automatically on your first tool call. Read it.
+2. Do NOT use auto-memory. Graphene replaces it. Use \`project_write()\` or \`global_write()\`.
+3. You MUST record discoveries immediately. Not later. Not after the push. Now.
+4. If the graph is empty, run \`/graphene:init\` or populate with \`batch()\` before doing anything else.
 
-### Before you start
-1. Read the injected status (automatic on first tool call)
-2. Call \`read(name)\` on every node relevant to your task
-3. Only then start reading files or grepping
+### You MUST record when
+- You changed code: update the affected node with \`learn()\`, update summary/entry_points/covers if needed, set \`last_commit\`. Bumping \`last_commit\` alone is not sufficient.
+- You discovered a boundary, constraint, gotcha, or workaround: \`learn(node, observation)\` or \`project_write()\`
+- The user corrected you or stated a preference: \`project_write()\` if repo-specific, \`global_write()\` if cross-repo. If unsure, ask.
+- You spent 3+ tool calls finding something: record where you found it
 
-### Reading
-- \`read(name)\` - get node detail: entry_points, observations, edges
+### Tool reference
+- \`read(name)\` - node detail: entry_points, observations, edges
 - \`search(query)\` - find across nodes and observations
-
-### Writing
-- \`learn(node, content)\` - record code knowledge on a node (where things live, gotchas, patterns)
-- \`project_write(category, subject, content)\` - record repo-specific conventions, decisions, context
-- \`global_write(category, subject, content)\` - record preferences that apply across all repos. If unsure whether something is project or global, ask the user.
-- \`upsert_node(name, fields)\` - update a node after changing its code
-- \`link(from, to, type, reason)\` - record relationships between subsystems
-
-### Recording triggers (immediate, do not defer)
-- You changed code -> update the affected node (observations, summary, entry_points, last_commit)
-- You discovered an architectural boundary or constraint -> \`learn(node, observation)\` or \`project_write()\`
-- You hit a gotcha, workaround, or surprising behavior -> \`learn(node, observation)\`
-- The user corrected your approach or gave a preference -> \`project_write()\` or \`global_write()\`
-- You spent 3+ tool calls finding something -> record where you found it
-
-Bumping \`last_commit\` alone is not sufficient. Record what you learned, not just that you were here.
-
-### Empty graph
-If the graph has no nodes, use \`/graphene:init\` or populate with \`batch()\`. Every node needs summary, covers, entry_points, and last_commit.
+- \`learn(node, content)\` - record knowledge on a node
+- \`project_write(category, subject, content)\` - repo-specific conventions, decisions, preferences
+- \`global_write(category, subject, content)\` - cross-repo user preferences
+- \`upsert_node(name, fields)\` - update node fields after code changes
+- \`link(from, to, type, reason)\` - record subsystem relationships
 
 ### Red flags (you are rationalizing if you think these)
 | Thought | Reality |
