@@ -62,7 +62,8 @@ function wrapDatabase(inner, filePath) {
         },
         exec(sql) {
             inner.run(sql);
-            save();
+            if (txDepth === 0)
+                save();
         },
         pragma(cmd, opts) {
             const result = inner.exec(`PRAGMA ${cmd}`);

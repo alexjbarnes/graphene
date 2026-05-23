@@ -79,7 +79,7 @@ function wrapDatabase(inner: SqlJsDatabase, filePath: string | null): GrapheneDa
 
     exec(sql: string): void {
       inner.run(sql);
-      save();
+      if (txDepth === 0) save();
     },
 
     pragma(cmd: string, opts?: { simple: boolean }): unknown {
