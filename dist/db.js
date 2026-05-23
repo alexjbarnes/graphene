@@ -54,6 +54,8 @@ function wrapDatabase(inner, filePath) {
                     const changes = inner.getRowsModified();
                     const result = inner.exec("SELECT last_insert_rowid()");
                     const lastInsertRowid = result.length > 0 ? result[0].values[0][0] : 0;
+                    if (txDepth === 0)
+                        save();
                     return { changes, lastInsertRowid };
                 },
             };
