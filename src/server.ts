@@ -347,6 +347,7 @@ export function createServer(ctx: ServerContext): Server {
         "You MUST call `read(name)` on relevant nodes before working on any subsystem. Do not start reading files, grepping, or exploring until you have checked the graph.",
         "If the graph is empty, you MUST explore the codebase and populate with `batch()` before doing anything else.",
         "Record immediately, do not defer: after changing code, update affected nodes with `learn()`, summary, entry_points, and `last_commit`. When you discover an architectural boundary, constraint, gotcha, or workaround, record it with `learn()` or `project_write()`. When the user corrects your approach or gives a preference, record it with `project_write()` or `global_write()`. Updating `last_commit` alone is not sufficient.",
+        "Recording is triggered by what you learned, not by whether a node already covers the file. If no node covers what you changed or discovered, that is a gap to fill, never a reason to skip: create a node if it is a real subsystem, otherwise `project_write()` the convention. 'No node covers this' must never be your stopping point.",
         "Tool scope: `learn(node, content)` for code knowledge on a node. `project_write(category, subject, content)` for repo-specific conventions and preferences. `global_write(category, subject, content)` for user preferences across repos. If unsure about scope, ask the user.",
         "Graphene replaces auto-memory. Do NOT write to memory files when graphene is installed. All facts, preferences, conventions, and workflow rules go into graphene via `project_write`, `global_write`, or `learn`. Two persistence systems means future sessions must check both places, which defeats the purpose.",
       ].join("\n\n"),
@@ -394,7 +395,8 @@ ${GRAPHENE_MARKER}
 4. If the graph is empty, run \`/graphene:init\` or populate with \`batch()\` before doing anything else.
 
 ### You MUST record when
-- You changed code: update the affected node with \`learn()\`, update summary/entry_points/covers if needed, set \`last_commit\`. Bumping \`last_commit\` alone is not sufficient.
+The trigger is what you learned, not whether a node exists. There is always a home: an existing node, a new node, or a project/global fact.
+- You changed code: update the affected node with \`learn()\`, update summary/entry_points/covers if needed, set \`last_commit\`. No node covers it? Create one if it is a real subsystem, else \`project_write()\` the convention. Bumping \`last_commit\` alone is not sufficient.
 - You discovered a boundary, constraint, gotcha, or workaround: \`learn(node, observation)\` or \`project_write()\`
 - The user corrected you or stated a preference: \`project_write()\` if repo-specific, \`global_write()\` if cross-repo. If unsure, ask.
 - You spent 3+ tool calls finding something: record where you found it
@@ -431,6 +433,7 @@ ${GRAPHENE_MARKER}
 | "I'll just bump last_commit" | Not enough. Review and update observations, summary, entry_points. |
 | "This change is too small to record" | Small discoveries compound. Record it. |
 | "This is just a fix, not a discovery" | Constraints and boundaries ARE discoveries. Record them. |
+| "No node covers this file, so nothing to record" | Wrong. Absence of a node is a gap. Create one if it is a real subsystem, else \`project_write()\` the convention. |
 | "I'll keep this in memory instead" | No. Graphene replaces memory. Use project_write or global_write. |
 ${GRAPHENE_MARKER_END}
 `;
