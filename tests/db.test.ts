@@ -71,6 +71,37 @@ describe("initRepoSchema", () => {
     }).toThrow();
     db.close();
   });
+
+  it("drops legacy FTS5 triggers so writes succeed on an upgraded database", () => {
+    const db = openMemoryDatabase();
+    initRepoSchema(db);
+
+    // Simulate a pre-migration database: a leftover trigger of the same name
+    // the FTS5-era schema used. A real fts5 virtual table cannot be created
+    // here (the bundled sql.js has no fts5 module), so a RAISE trigger stands
+    // in for the write failure the real one caused.
+    db.exec(
+      "CREATE TRIGGER nodes_fts_insert AFTER INSERT ON nodes BEGIN SELECT RAISE(ABORT, 'legacy fts trigger'); END"
+    );
+
+    expect(() => {
+      db.prepare("INSERT INTO nodes (name, type) VALUES ('x', 'subsystem')").run();
+    }).toThrow();
+
+    // Re-running initRepoSchema must drop the legacy trigger.
+    initRepoSchema(db);
+
+    expect(() => {
+      db.prepare("INSERT INTO nodes (name, type) VALUES ('y', 'subsystem')").run();
+    }).not.toThrow();
+
+    const triggers = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='trigger'")
+      .all()
+      .map((r: Record<string, unknown>) => r.name);
+    expect(triggers).not.toContain("nodes_fts_insert");
+    db.close();
+  });
 });
 
 describe("initGlobalSchema", () => {

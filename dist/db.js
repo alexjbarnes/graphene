@@ -138,6 +138,22 @@ export function openMemoryDatabase() {
     return wrapDatabase(inner, null);
 }
 export function initRepoSchema(db) {
+    // Migrate away from the legacy FTS5 schema. Versions before the LIKE-based
+    // search created nodes_fts / observations_fts virtual tables (USING fts5)
+    // plus AFTER INSERT/UPDATE/DELETE triggers that wrote into them. Search no
+    // longer uses FTS5, and the bundled sql.js has no fts5 module, so on a
+    // pre-migration database those triggers make every node/observation write
+    // fail with "no such module: fts5". Dropping a trigger does not need the
+    // module (dropping the virtual table itself would); the now-unused virtual
+    // tables are simply never referenced again.
+    db.exec(`
+    DROP TRIGGER IF EXISTS nodes_fts_insert;
+    DROP TRIGGER IF EXISTS nodes_fts_update;
+    DROP TRIGGER IF EXISTS nodes_fts_delete;
+    DROP TRIGGER IF EXISTS observations_fts_insert;
+    DROP TRIGGER IF EXISTS observations_fts_update;
+    DROP TRIGGER IF EXISTS observations_fts_delete;
+  `);
     db.exec(`
     CREATE TABLE IF NOT EXISTS nodes (
       name TEXT PRIMARY KEY,
