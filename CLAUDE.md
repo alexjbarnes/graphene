@@ -1,34 +1,51 @@
 <!-- graphene -->
 ## Graphene Context Graph
 
-This project has a persistent context graph managed by the Graphene MCP server. It tracks subsystems, relationships, and learned observations across sessions. You must use it.
+### Rules
+1. Do NOT read files, grep, or explore until you have called `read(name)` on every relevant node. The graph status is injected automatically on your first tool call. Read it.
+2. Do NOT use auto-memory. Graphene replaces it. Use `project_write()` or `global_write()`.
+3. You MUST record discoveries immediately. Not later. Not after the push. Now.
+4. If the graph is empty, run `/graphene:init` or populate with `batch()` before doing anything else.
 
-### Before anything else
-1. Call `status`. It returns the node index, stale nodes, and user preferences.
-2. Identify which nodes are relevant to your task.
-3. Call `read(name)` on each relevant node. It contains entry_points (where to start reading), observations (what prior sessions learned), and edges (related subsystems).
+### You MUST record when
+The trigger is what you learned, not whether a node exists. There is always a home: an existing node, a new node, or a project/global fact.
+- You changed code: update the affected node with `learn()`, update summary/entry_points/covers if needed, set `last_commit`. No node covers it? Create one if it is a real subsystem, else `project_write()` the convention. Bumping `last_commit` alone is not sufficient.
+- You discovered a boundary, constraint, gotcha, or workaround: `learn(node, observation)` or `project_write()`
+- The user corrected you or stated a preference: `project_write()` if repo-specific, `global_write()` if cross-repo. If unsure, ask.
+- You spent 3+ tool calls finding something: record where you found it
 
-Do not skip these steps. Do not start reading files, grepping, or exploring until you have checked the graph. The graph exists to prevent wasted tool calls. Even if it turns out not to help, reading a node is faster than grepping through wrong files.
+### Tools: reading
+- `status()` - auto-injected at session start. Call manually to refresh.
+- `read()` - no args returns full node index. `read(name)` returns node detail: entry_points, observations, edges, dependents.
+- `search(query)` - search across nodes, observations, project facts, global facts, and edge reasons. Multi-word queries match any word, ranked by relevance.
+- `stale()` - check which nodes have changed files since their last_commit.
+- `project_read(category?, subject?)` - read project facts. No args returns all.
+- `global_read(category?, subject?)` - read global facts. No args returns all.
 
-### Before claiming something doesn't exist
-- Check the edges on related nodes. The feature may live in a connected subsystem.
-- Use `search(query)` to check observations from prior sessions.
+### Tools: recording
+- `learn(node, content)` - append an observation to a node. Use for code knowledge, gotchas, boundaries.
+- `upsert_node(name, fields)` - create or update a node. Fields: summary, covers, entry_points, last_commit, metadata, type. Only provided fields change on update.
+- `link(from, to, type, reason)` - create edge. Types: depends_on, extends, related_to, mirrors. related_to and mirrors are bidirectional.
+- `batch({nodes, edges, observations})` - bulk create/update in one transaction.
+- `project_write(category, subject, content)` - repo-specific conventions, decisions, preferences.
+- `global_write(category, subject, content)` - cross-repo user preferences.
 
-### After changing code
-- Update `last_commit` on affected nodes: `upsert_node(name, {last_commit: "<current HEAD>"})`
+### Tools: cleanup
+- `remove_observation(id)` - delete a wrong or outdated observation (ID from read response).
+- `unlink(from, to, type?)` - remove an edge. Omit type to remove all edges between the pair.
+- `delete_node(name)` - remove a node and all its edges and observations.
+- `project_delete(category, subject)` - remove a project fact.
+- `global_delete(category, subject)` - remove a global fact.
 
-### When you learn something
-- Found code somewhere unexpected: `learn(node_name, content)`
-- Spent 3+ tool calls locating something: record where you found it.
-- Discovered a cross-cutting relationship: `link(from, to, type, reason)`
-- Something you assumed was wrong: remove the old observation, add the correction.
-
-### First session (empty graph)
-If `status` returns an empty node list, explore the codebase and populate with `batch()`. Every node must include:
-- `summary`: one-line purpose statement. Without this, the index is just a list of names.
-- `covers`: file/directory patterns (e.g. `["src/auth/"]`). Without this, staleness tracking cannot work.
-- `entry_points`: key files to start reading (e.g. `["src/auth/router.ts", "src/auth/middleware.ts"]`).
-- `last_commit`: set to current HEAD so staleness tracking starts immediately.
-
-A node without summary, covers, and entry_points is useless. Prefer fewer complete nodes over many empty ones.
+### Red flags (you are rationalizing if you think these)
+| Thought | Reality |
+|---------|---------|
+| "I already know this codebase" | You do not. Read the graph. Prior sessions recorded what they found. |
+| "I'll just grep for it" | Check the graph first. The answer may already be there. |
+| "I'll update graphene later" | No. Update as you go. You will forget. |
+| "I'll just bump last_commit" | Not enough. Review and update observations, summary, entry_points. |
+| "This change is too small to record" | Small discoveries compound. Record it. |
+| "This is just a fix, not a discovery" | Constraints and boundaries ARE discoveries. Record them. |
+| "No node covers this file, so nothing to record" | Wrong. Absence of a node is a gap. Create one if it is a real subsystem, else `project_write()` the convention. |
+| "I'll keep this in memory instead" | No. Graphene replaces memory. Use project_write or global_write. |
 <!-- /graphene -->
