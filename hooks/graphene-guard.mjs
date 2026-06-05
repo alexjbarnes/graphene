@@ -133,18 +133,32 @@ function formatStatus(status) {
   return lines.join("\n");
 }
 
+// Graphene tools surface under different prefixes depending on how the server
+// is loaded: "mcp__graphene__<tool>" as a standalone MCP server, or
+// "mcp__plugin_graphene_graphene__<tool>" when installed as a Claude Code
+// plugin. Match on the "graphene" segment, and compare against the bare tool
+// name (the part after the last "__") so both forms work.
+function isGrapheneTool(toolName) {
+  return /^mcp__.*graphene.*__/.test(toolName || "");
+}
+
+function bareToolName(toolName) {
+  const parts = (toolName || "").split("__");
+  return parts[parts.length - 1];
+}
+
 const WRITE_TOOLS = new Set([
-  "mcp__graphene__learn",
-  "mcp__graphene__upsert_node",
-  "mcp__graphene__link",
-  "mcp__graphene__unlink",
-  "mcp__graphene__batch",
-  "mcp__graphene__delete_node",
-  "mcp__graphene__remove_observation",
-  "mcp__graphene__global_write",
-  "mcp__graphene__global_delete",
-  "mcp__graphene__project_write",
-  "mcp__graphene__project_delete",
+  "learn",
+  "upsert_node",
+  "link",
+  "unlink",
+  "batch",
+  "delete_node",
+  "remove_observation",
+  "global_write",
+  "global_delete",
+  "project_write",
+  "project_delete",
 ]);
 
 async function main() {
@@ -168,11 +182,12 @@ async function main() {
   const state = readState(session_id);
   state.last_interaction = new Date().toISOString();
 
-  if (hook_event_name === "PostToolUse" && tool_name?.startsWith("mcp__graphene__")) {
-    if (tool_name === "mcp__graphene__status") {
+  if (hook_event_name === "PostToolUse" && isGrapheneTool(tool_name)) {
+    const bare = bareToolName(tool_name);
+    if (bare === "status") {
       state.status_injected = true;
     }
-    if (WRITE_TOOLS.has(tool_name)) {
+    if (WRITE_TOOLS.has(bare)) {
       state.last_write = new Date().toISOString();
     }
     writeState(session_id, state);
@@ -226,7 +241,7 @@ async function main() {
   }
 
   if (hook_event_name === "PreToolUse") {
-    if (tool_name?.startsWith("mcp__graphene__")) {
+    if (isGrapheneTool(tool_name)) {
       writeState(session_id, state);
       process.exit(0);
     }

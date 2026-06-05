@@ -134,6 +134,16 @@ describe("graphene-guard hook", () => {
       expect(stdout.trim()).toBe("");
     });
 
+    it("skips plugin-named graphene tools silently", () => {
+      const { stdout } = run({
+        session_id: "s1",
+        hook_event_name: "PreToolUse",
+        tool_name: "mcp__plugin_graphene_graphene__read",
+        tool_input: {},
+      }, { cwd: repoPath });
+      expect(stdout.trim()).toBe("");
+    });
+
     it("skips when not in a git repo", () => {
       const noGit = mkdtempSync(join(tmpdir(), "graphene-no-git-"));
       try {
@@ -182,6 +192,36 @@ describe("graphene-guard hook", () => {
         session_id: "s1",
         hook_event_name: "PostToolUse",
         tool_name: "mcp__graphene__read",
+        tool_input: {},
+      });
+      expect(state?.last_write).toBeNull();
+    });
+
+    it("sets status_injected on plugin-named status call", () => {
+      const { state } = run({
+        session_id: "s1",
+        hook_event_name: "PostToolUse",
+        tool_name: "mcp__plugin_graphene_graphene__status",
+        tool_input: {},
+      });
+      expect(state?.status_injected).toBe(true);
+    });
+
+    it("sets last_write on plugin-named mutation tools", () => {
+      const { state } = run({
+        session_id: "s1",
+        hook_event_name: "PostToolUse",
+        tool_name: "mcp__plugin_graphene_graphene__learn",
+        tool_input: {},
+      });
+      expect(state?.last_write).toBeTruthy();
+    });
+
+    it("does not set last_write on plugin-named read-only tools", () => {
+      const { state } = run({
+        session_id: "s1",
+        hook_event_name: "PostToolUse",
+        tool_name: "mcp__plugin_graphene_graphene__read",
         tool_input: {},
       });
       expect(state?.last_write).toBeNull();
@@ -255,6 +295,23 @@ describe("graphene-guard hook", () => {
         stdout = (err as { stdout?: string }).stdout || "";
       }
       expect(stdout.trim()).toBe("");
+    });
+  });
+
+  describe("hooks.json PostToolUse matcher", () => {
+    it("matches both standalone and plugin graphene tool names", () => {
+      const config = JSON.parse(
+        readFileSync(join(import.meta.dirname, "../../hooks/hooks.json"), "utf-8")
+      );
+      const matchers = config.hooks.PostToolUse.map((h: { matcher: string }) => h.matcher);
+      const grapheneMatcher = matchers.find((m: string) => m.includes("graphene"));
+      expect(grapheneMatcher).toBeTruthy();
+
+      const re = new RegExp(grapheneMatcher);
+      expect(re.test("mcp__graphene__learn")).toBe(true);
+      expect(re.test("mcp__plugin_graphene_graphene__learn")).toBe(true);
+      expect(re.test("mcp__playwright__browser_click")).toBe(false);
+      expect(re.test("Bash")).toBe(false);
     });
   });
 });

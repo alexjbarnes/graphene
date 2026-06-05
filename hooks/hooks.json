@@ -14,7 +14,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "mcp__graphene__.*",
+        "matcher": "mcp__.*graphene.*",
         "hooks": [
           {
             "type": "command",
