@@ -2,12 +2,13 @@
 
 A graph nobody reads or updates is dead weight. The hard problem graphene solves is not storage, it is getting the agent to use the store. Instructions alone do not do it. Agents skip the read and forget the write.
 
-The enforcement layer makes the right action show up at the right moment. It is a set of Claude Code hooks plus an auto-injected `CLAUDE.md` block. All of it is additive: it injects context, it does not block tool calls.
+The enforcement layer makes the right action show up at the right moment. It is a set of Claude Code hooks. All of it is additive: it injects context, it does not block tool calls.
 
 ## The hook script
 
-One script, `hooks/graphene-guard.mjs`, handles every event. It reads the event name and tool name from stdin and branches. `hooks/hooks.json` registers it on three triggers:
+One script, `hooks/graphene-guard.mjs`, handles every event. It reads the event name and tool name from stdin and branches. `hooks/hooks.json` registers it on four triggers:
 
+- `SessionStart` on every session (startup, resume, clear, compact)
 - `PreToolUse` on all tools
 - `PostToolUse` on graphene's own MCP tools
 - `PostToolUse` on `Bash`
@@ -43,11 +44,11 @@ The hook tracks per-session state in `~/.graphene/sessions/<session_id>.json`: w
 
 Cleanup is lazy. On roughly one call in a hundred, the hook sweeps the sessions directory and deletes state files older than seven days. There is no daemon and no scheduled job.
 
-## The CLAUDE.md block
+## The rules block
 
-When the MCP server starts in a repo, it writes a graphene section into that repo's `CLAUDE.md`, wrapped in `<!-- graphene -->` markers. The block holds the rules, the recording triggers, the full tool list, and a table of rationalizations with their rebuttals ("No node covers this file, so nothing to record" answered by "Absence of a node is a gap, create one or write a project fact").
+On `SessionStart`, which fires at startup, on resume, and after compaction, the hook injects the standing rules block as context: the rules, the recording triggers, the full tool list, and a table of rationalizations with their rebuttals ("No node covers this file, so nothing to record" answered by "Absence of a node is a gap, create one or write a project fact"). The text lives in `src/claude-md.ts` and the hook imports it from the compiled `dist/`, so the hook and the server never drift. Injecting after compaction is what keeps the rules in context once the original session start scrolls out.
 
-The markers let the server replace its own block on later runs without disturbing the rest of your `CLAUDE.md`. Edits you make outside the markers are left alone. Edits inside the markers are overwritten on the next run, so customize the template in `src/server.ts`, not in the generated file.
+Earlier versions wrote this block into the repo's `CLAUDE.md` between `<!-- graphene -->` markers. That dragged graphene-specific instructions into committed `CLAUDE.md` files for teammates who do not run graphene, so the write was dropped. The MCP server now does the reverse on startup: if it finds a committed block it strips it, preserving the rest of the file and removing `CLAUDE.md` entirely if the block was its only content. The strip is a one-time migration and a no-op once done.
 
 ## Soft by design
 

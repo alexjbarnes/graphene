@@ -8,7 +8,7 @@ An AI agent starts every session blind. It re-reads the same files, re-derives t
 
 Graphene gives the agent a memory that survives. It stores a graph of your codebase: subsystems as nodes, the relationships between them as edges, and the observations an agent records while working. The next session reads the graph instead of starting from zero.
 
-The hard part of agent memory is not storage. It is discipline. Agents forget to read what earlier sessions saved, and forget to record what they just learned. Graphene ships behavioral enforcement to close that gap: a hook injects the graph at session start, a commit gate flags the nodes a change touched, and an auto-injected `CLAUDE.md` keeps the rules in front of the agent.
+The hard part of agent memory is not storage. It is discipline. Agents forget to read what earlier sessions saved, and forget to record what they just learned. Graphene ships behavioral enforcement to close that gap: a hook injects the graph on the first tool call, a commit gate flags the nodes a change touched, and a SessionStart hook keeps the rules in front of the agent at startup and after every compaction.
 
 Three things follow:
 
@@ -27,7 +27,7 @@ Install as a Claude Code plugin:
 /plugin install graphene@graphene
 ```
 
-This wires up the MCP server, the enforcement hooks, the `init` and `refresh` skills, and the `CLAUDE.md` block in one step. The plugin ships a prebuilt `dist/`, so there is no build step on your machine.
+This wires up the MCP server, the enforcement hooks, the `init` and `refresh` skills, and the SessionStart rules injection in one step. The plugin ships a prebuilt `dist/`, so there is no build step on your machine.
 
 Then, in any repo:
 
@@ -42,7 +42,7 @@ See [Installation](docs/installation.md) for the standalone MCP setup and data l
 ## Prerequisites
 
 - Node.js >= 20.11 (the hooks use `import.meta.dirname`)
-- [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) for the enforcement layer. The MCP server alone works with any MCP client, but the hooks, skills, and `CLAUDE.md` injection are Claude Code features.
+- [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) for the enforcement layer. The MCP server alone works with any MCP client, but the hooks, skills, and rules injection are Claude Code features.
 - `git`. Staleness detection and the commit gate read the repo's git history.
 
 ## How it works
@@ -57,7 +57,7 @@ The **enforcement layer** is a set of Claude Code hooks. On the first tool call 
 
 - [Concepts](docs/concepts.md): nodes, edges, observations, project and global facts, and how scope is decided
 - [Tools](docs/tools.md): the full reference for all 17 MCP tools
-- [Enforcement](docs/enforcement.md): the hook layer, status injection, the commit gate, session state, and the auto-injected `CLAUDE.md`
+- [Enforcement](docs/enforcement.md): the hook layer, status injection, the commit gate, session state, and the SessionStart rules injection
 - [Staleness](docs/staleness.md): how `covers` and `last_commit` let the graph detect its own drift
 - [Skills](docs/skills.md): the `init` and `refresh` slash commands
 - [Installation](docs/installation.md): plugin install, standalone MCP setup, data locations, and configuration

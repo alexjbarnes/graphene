@@ -272,6 +272,45 @@ describe("graphene-guard hook", () => {
     });
   });
 
+  describe("SessionStart - rules injection", () => {
+    it("injects the rules block on startup", () => {
+      const { stdout } = run({
+        session_id: "s1",
+        hook_event_name: "SessionStart",
+        source: "startup",
+      });
+      const output = parseOutput(stdout);
+      expect(output.hookSpecificOutput.hookEventName).toBe("SessionStart");
+      expect(output.hookSpecificOutput.additionalContext).toContain("Graphene Context Graph");
+      expect(output.hookSpecificOutput.additionalContext).toContain("You MUST record");
+    });
+
+    it("injects again after compaction", () => {
+      const { stdout } = run({
+        session_id: "s1",
+        hook_event_name: "SessionStart",
+        source: "compact",
+      });
+      const output = parseOutput(stdout);
+      expect(output.hookSpecificOutput.additionalContext).toContain("Graphene Context Graph");
+    });
+
+    it("injects even when not in a git repo", () => {
+      const noGit = mkdtempSync(join(tmpdir(), "graphene-no-git-ss-"));
+      try {
+        const { stdout } = run({
+          session_id: "s1",
+          hook_event_name: "SessionStart",
+          source: "startup",
+        }, { cwd: noGit });
+        const output = parseOutput(stdout);
+        expect(output.hookSpecificOutput.additionalContext).toContain("Graphene Context Graph");
+      } finally {
+        rmSync(noGit, { recursive: true, force: true });
+      }
+    });
+  });
+
   describe("edge cases", () => {
     it("handles missing session_id", () => {
       const { stdout } = run({

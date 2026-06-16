@@ -4,7 +4,7 @@ Two ways to run graphene: as a Claude Code plugin (gets you the enforcement laye
 
 ## As a Claude Code plugin
 
-This is the recommended path. It installs the MCP server, the hooks, the skills, and the `CLAUDE.md` block together.
+This is the recommended path. It installs the MCP server, the hooks, the skills, and the SessionStart rules injection together.
 
 ```
 /plugin marketplace add alexjbarnes/graphene
@@ -41,7 +41,7 @@ Then register it with your MCP client. The server speaks stdio. The repo's own `
 }
 ```
 
-The server picks up the current working directory's git repo on startup. The hooks, skills, and `CLAUDE.md` injection are Claude Code features and do not come with this path. You get the 17 tools and nothing that reminds the agent to use them.
+The server picks up the current working directory's git repo on startup. The hooks, skills, and rules injection are Claude Code features and do not come with this path. You get the 17 tools and nothing that reminds the agent to use them.
 
 ## Data locations
 

@@ -177,6 +177,23 @@ async function main() {
 
   if (!session_id) process.exit(0);
 
+  // SessionStart fires on startup, resume, clear, and after compaction. Inject
+  // the standing rules block here instead of writing it into CLAUDE.md. The
+  // text is imported from the compiled dist so it never drifts from the server.
+  if (hook_event_name === "SessionStart") {
+    try {
+      const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || join(import.meta.dirname, "..");
+      const { GRAPHENE_RULES } = await import(join(pluginRoot, "dist", "claude-md.js"));
+      process.stdout.write(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "SessionStart",
+          additionalContext: GRAPHENE_RULES,
+        },
+      }));
+    } catch {}
+    process.exit(0);
+  }
+
   if (Math.random() < 0.01) cleanupStaleSessions();
 
   const state = readState(session_id);
