@@ -92,4 +92,68 @@ describe("upsert_node", () => {
     });
     expect(result).toEqual({ name: "auth", status: "updated", fields_updated: ["summary"] });
   });
+
+  it("unwraps a fields object (the documented shorthand)", () => {
+    handleUpsertNode(db, { name: "auth", type: "subsystem", last_commit: "old" });
+    const result = handleUpsertNode(db, { name: "auth", fields: { last_commit: "new" } });
+    expect(result).toEqual({ name: "auth", status: "updated", fields_updated: ["last_commit"] });
+    const row = db.prepare("SELECT last_commit FROM nodes WHERE name = ?").get("auth") as Record<string, unknown>;
+    expect(row.last_commit).toBe("new");
+  });
+
+  it("unwraps a fields JSON string (the silent-drop bug)", () => {
+    handleUpsertNode(db, { name: "tts", type: "subsystem", last_commit: "0b76f97" });
+    const result = handleUpsertNode(db, { name: "tts", fields: '{"last_commit": "9f9b245"}' });
+    expect(result.status).toBe("updated");
+    const row = db.prepare("SELECT last_commit FROM nodes WHERE name = ?").get("tts") as Record<string, unknown>;
+    expect(row.last_commit).toBe("9f9b245");
+  });
+
+  it("merges metadata supplied inside a fields wrapper", () => {
+    handleUpsertNode(db, { name: "tts", type: "subsystem", metadata: { a: "1" } });
+    handleUpsertNode(db, { name: "tts", fields: { metadata: { b: "2" } } });
+    const row = db.prepare("SELECT metadata FROM nodes WHERE name = ?").get("tts") as Record<string, unknown>;
+    expect(JSON.parse(row.metadata as string)).toEqual({ a: "1", b: "2" });
+  });
+
+  it("coerces metadata passed as a JSON string", () => {
+    handleUpsertNode(db, { name: "auth", type: "subsystem" });
+    handleUpsertNode(db, { name: "auth", metadata: '{"k":"v"}' });
+    const row = db.prepare("SELECT metadata FROM nodes WHERE name = ?").get("auth") as Record<string, unknown>;
+    expect(JSON.parse(row.metadata as string)).toEqual({ k: "v" });
+  });
+
+  it("coerces entry_points and covers passed as JSON strings", () => {
+    const result = handleUpsertNode(db, {
+      name: "auth",
+      type: "subsystem",
+      entry_points: '["auth/router.ts"]',
+      covers: '["auth/"]',
+    });
+    expect(result.status).toBe("created");
+    const row = db.prepare("SELECT * FROM nodes WHERE name = ?").get("auth") as Record<string, unknown>;
+    expect(JSON.parse(row.entry_points as string)).toEqual(["auth/router.ts"]);
+    expect(JSON.parse(row.covers as string)).toEqual(["auth/"]);
+  });
+
+  it("throws on an unknown field", () => {
+    handleUpsertNode(db, { name: "auth", type: "subsystem" });
+    expect(() => handleUpsertNode(db, { name: "auth", lastCommit: "x" })).toThrow(
+      "Unknown field"
+    );
+  });
+
+  it("throws when updating an existing node with no fields", () => {
+    handleUpsertNode(db, { name: "auth", type: "subsystem" });
+    expect(() => handleUpsertNode(db, { name: "auth" })).toThrow(
+      "no fields to update"
+    );
+  });
+
+  it("throws when fields is a string but not valid JSON", () => {
+    handleUpsertNode(db, { name: "auth", type: "subsystem" });
+    expect(() => handleUpsertNode(db, { name: "auth", fields: "not json" })).toThrow(
+      "not valid JSON"
+    );
+  });
 });

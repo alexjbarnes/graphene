@@ -36,9 +36,9 @@ The same, for user-level facts that span repos.
 
 Appends an observation to a node. Append-only: it never overwrites an existing observation. The optional `source` records what triggered the learning. This is the workhorse for code knowledge, gotchas, and constraints.
 
-### `upsert_node(name, fields)`
+### `upsert_node(name, ...)`
 
-Creates a node, or merge-updates an existing one. Only the fields you pass change. `metadata` is shallow-merged rather than replaced. `type` is required when creating. The return value reports whether the node was `created`, `updated`, or left `unchanged`, and which fields changed.
+Creates a node, or merge-updates an existing one. Pass each field as a top-level argument (`type`, `summary`, `entry_points`, `covers`, `last_commit`, `metadata`), the same shape as a node in `batch`. Do not wrap them in a `fields` object. Only the fields you pass change. `metadata` is shallow-merged rather than replaced. `type` is required when creating. The return value reports whether the node was `created` or `updated`, and which fields changed. Updating an existing node with no fields is an error rather than a silent no-op.
 
 ### `link(from, to, type, reason)`
 

@@ -33,7 +33,7 @@ The trigger is what you learned, not whether a node exists. There is always a ho
 
 ### Tools: recording
 - \`learn(node, content)\` - append an observation to a node. Use for code knowledge, gotchas, boundaries.
-- \`upsert_node(name, fields)\` - create or update a node. Fields: summary, covers, entry_points, last_commit, metadata, type. Only provided fields change on update.
+- \`upsert_node(name, ...)\` - create or update a node. Pass each field as a top-level arg (summary, covers, entry_points, last_commit, metadata, type), the same shape as a node in \`batch\`. Do NOT wrap them in a \`fields\` object. Only provided fields change on update; metadata shallow-merges.
 - \`link(from, to, type, reason)\` - create edge. Types: depends_on, extends, related_to, mirrors. related_to and mirrors are bidirectional.
 - \`batch({nodes, edges, observations})\` - bulk create/update in one transaction.
 - \`project_write(category, subject, content)\` - repo-specific conventions, decisions, preferences.

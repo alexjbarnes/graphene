@@ -12,15 +12,86 @@ interface UpsertNodeParams {
 
 interface UpsertResult {
   name: string;
-  status: "created" | "updated" | "unchanged";
+  status: "created" | "updated";
   fields_updated?: string[];
+}
+
+const KNOWN_FIELDS = new Set([
+  "name",
+  "type",
+  "summary",
+  "entry_points",
+  "covers",
+  "last_commit",
+  "metadata",
+]);
+
+function tryParse(value: string, label: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw new Error(`${label} is a string but not valid JSON`);
+  }
+}
+
+function asObject(value: unknown, label: string): Record<string, unknown> {
+  const parsed = typeof value === "string" ? tryParse(value, label) : value;
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    const suffix = typeof value === "string" ? " or a JSON object string" : "";
+    throw new Error(`${label} must be an object${suffix}`);
+  }
+  return parsed as Record<string, unknown>;
+}
+
+function asArray(value: unknown, label: string): unknown[] {
+  const parsed = typeof value === "string" ? tryParse(value, label) : value;
+  if (!Array.isArray(parsed)) {
+    const suffix = typeof value === "string" ? " or a JSON array string" : "";
+    throw new Error(`${label} must be an array${suffix}`);
+  }
+  return parsed;
+}
+
+// Defensive normalization. Models frequently follow the `upsert_node(name,
+// fields)` shorthand and wrap every field in a `fields` object, sometimes as a
+// JSON string, and sometimes JSON-stringify structured fields on their own. The
+// flat schema would silently drop all of it and report nothing changed. Unwrap
+// and coerce so a well-meant write is never lost, and reject anything we still
+// do not recognize so the failure is loud, not silent.
+function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
+  let merged: Record<string, unknown> = { ...args };
+
+  if ("fields" in merged && merged.fields !== undefined && merged.fields !== null) {
+    const fields = asObject(merged.fields, "fields");
+    delete merged.fields;
+    merged = { ...fields, ...merged }; // explicit top-level keys win over wrapped
+  }
+
+  if (typeof merged.metadata === "string") {
+    merged.metadata = asObject(merged.metadata, "metadata");
+  }
+  if (typeof merged.entry_points === "string") {
+    merged.entry_points = asArray(merged.entry_points, "entry_points");
+  }
+  if (typeof merged.covers === "string") {
+    merged.covers = asArray(merged.covers, "covers");
+  }
+
+  const unknown = Object.keys(merged).filter((k) => !KNOWN_FIELDS.has(k));
+  if (unknown.length > 0) {
+    throw new Error(
+      `Unknown field(s): ${unknown.join(", ")}. upsert_node takes top-level fields: ` +
+        `name, type, summary, entry_points, covers, last_commit, metadata. Do not wrap them in a "fields" object.`
+    );
+  }
+  return merged;
 }
 
 export function handleUpsertNode(
   db: GrapheneDatabase,
   args: Record<string, unknown>
 ): UpsertResult {
-  const params = args as unknown as UpsertNodeParams;
+  const params = normalizeArgs(args) as unknown as UpsertNodeParams;
   if (!params.name) throw new Error("name is required");
 
   const existing = db
@@ -84,7 +155,11 @@ export function handleUpsertNode(
   }
 
   if (updates.length === 0) {
-    return { name: params.name, status: "unchanged" };
+    throw new Error(
+      `upsert_node for existing node "${params.name}" provided no fields to update. ` +
+        `Pass fields as top-level args (summary, covers, entry_points, last_commit, metadata, type), ` +
+        `not wrapped in a "fields" object.`
+    );
   }
 
   updates.push("updated_at = datetime('now')");
