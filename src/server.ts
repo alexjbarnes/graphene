@@ -25,6 +25,7 @@ import { handleProjectDelete } from "./tools/project-delete.js";
 import { handleBatch } from "./tools/batch.js";
 import { handleStatus, boundedKeys } from "./tools/status.js";
 import { listFacts } from "./store.js";
+import { exportGlobals, importGlobals } from "./globals-sync.js";
 import type { IndexEntry, NodeDetail, SearchResult } from "./types.js";
 import {
   type RepoScope,
@@ -227,6 +228,41 @@ const TOOLS = [
         subject: { type: "string", description: "Fact subject" },
       },
       required: ["category", "subject"],
+    },
+  },
+  {
+    name: "globals_export",
+    description:
+      "Export all global facts to a portable markdown bundle at path, for moving user-level facts between machines.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        path: {
+          type: "string",
+          description: "File path to write the bundle to. A leading ~/ expands to the home directory.",
+        },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "globals_import",
+    description:
+      "Import global facts from a portable markdown bundle at path, merging by category+subject. Facts already " +
+      "present locally with different content are left untouched and reported as skipped unless overwrite is set.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        path: {
+          type: "string",
+          description: "File path to read the bundle from. A leading ~/ expands to the home directory.",
+        },
+        overwrite: {
+          type: "boolean",
+          description: "Overwrite local facts that differ from the bundle instead of skipping them (default false).",
+        },
+      },
+      required: ["path"],
     },
   },
   {
@@ -481,6 +517,25 @@ function checkSameScope(
   return { scope: fromR.scope, from: fromR.name, to: toR.name };
 }
 
+// globals_export/globals_import take a plain `path` (plus `overwrite` for
+// import) rather than the `{repo}`-shaped args above, so their arg handling
+// is inlined here rather than split into src/tools/ handlers.
+function dispatchGlobalsExport(globalDir: string, args: Record<string, unknown>): { path: string; count: number } {
+  const path = args.path as string | undefined;
+  if (!path) throw new Error("path is required");
+  return exportGlobals(globalDir, path);
+}
+
+function dispatchGlobalsImport(
+  globalDir: string,
+  args: Record<string, unknown>
+): { imported: number; unchanged: number; skipped: string[]; overwritten: number } {
+  const path = args.path as string | undefined;
+  if (!path) throw new Error("path is required");
+  const overwrite = args.overwrite === true;
+  return importGlobals(globalDir, path, overwrite);
+}
+
 export function dispatch(ctx: ServerContext, tool: string, args: Record<string, unknown>): unknown {
   switch (tool) {
     case "global_read":
@@ -489,6 +544,14 @@ export function dispatch(ctx: ServerContext, tool: string, args: Record<string, 
       return handleGlobalWrite(ctx.globalDir, args);
     case "global_delete":
       return handleGlobalDelete(ctx.globalDir, args);
+    // globals_export/globals_import work on the whole global fact store, so
+    // (like global_*) they dispatch here, before requireScopes -- they must
+    // work outside any repo and identically in single- and multi-repo
+    // sessions, since global facts are not scoped to a repo at all.
+    case "globals_export":
+      return dispatchGlobalsExport(ctx.globalDir, args);
+    case "globals_import":
+      return dispatchGlobalsImport(ctx.globalDir, args);
     // project_* take the same optional `repo` arg regardless of how many
     // scopes are in play, so they are resolved uniformly here rather than
     // split across the single/multi dispatch below.

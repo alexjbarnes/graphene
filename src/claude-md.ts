@@ -38,6 +38,7 @@ The trigger is what you learned, not whether a node exists. There is always a ho
 - \`batch({nodes, edges, observations})\` - bulk create/update in one transaction.
 - \`project_write(category, subject, content, repo?)\` - repo-specific conventions, decisions, preferences.
 - \`global_write(category, subject, content)\` - cross-repo user preferences.
+- \`globals_export(path)\` / \`globals_import(path, overwrite?)\` - move global facts between machines as a markdown bundle.
 
 ### Tools: cleanup
 - \`remove_observation(node, id)\` - delete a wrong or outdated observation (id from read response).
