@@ -41,6 +41,8 @@ Use them for the things you only learn by reading the code: a non-obvious constr
 
 When an observation turns out to be wrong, remove it by id with `remove_observation`. Do not leave a false note for a future session to trust.
 
+An observation's id is a short content hash, computed from the observation text when it is written. `read(name)` shows the id next to every observation, so there is never a separate lookup step before you can remove one.
+
 ## Project facts
 
 A project fact is repo-scoped knowledge that does not belong to a node. Conventions, decisions, preferences that apply across the whole codebase.
@@ -51,11 +53,11 @@ A fact is keyed by `category` plus `subject`, and that pair is unique. Writing t
 - `preference` / `tests`: "no mocks in unit tests, use the in-memory database helper"
 - `decision` / `auth`: "we chose session cookies over JWT, see the ADR in docs/"
 
-Project facts are stored in the repo's `.graphene/context.db`, alongside the nodes.
+Project facts are stored as individual files under the repo's `.graphene/facts/`, alongside the nodes.
 
 ## Global facts
 
-A global fact is the same shape as a project fact, but it lives in `~/.graphene/global.db` and applies across every repo. Use it for things about you, the user, that do not change per project:
+A global fact is the same shape as a project fact, but it lives under `~/.graphene/global/` and applies across every repo. Use it for things about you, the user, that do not change per project:
 
 - `preference` / `communication`: "be terse, skip the preamble"
 - `expertise` / `go`: "assume deep Go proficiency, do not explain the basics"
@@ -63,6 +65,39 @@ A global fact is the same shape as a project fact, but it lives in `~/.graphene/
 
 The split matters. A convention about one repo's build is a project fact. A standing preference about how you like to work is a global fact. When the scope is genuinely unclear, the agent should ask rather than guess.
 
-## Why two databases
+## Storage
 
-Repo knowledge is portable with the repo and shared with anyone who clones it (though the graph file itself is gitignored by default, see [Installation](installation.md)). User knowledge follows you across every project on your machine. Keeping them in separate files keeps the boundary clean: nothing about your personal preferences leaks into a repo's graph, and nothing repo-specific pollutes your global one.
+Everything graphene stores is a plain markdown file. A node is one file at `.graphene/nodes/<name>.md`. A fact is one file at `.graphene/facts/<category>__<subject>.md`. Both live under the repo's own `.graphene/`, which is committed and travels with the repo through git like any other file: clone the repo, get the graph.
+
+A node file's frontmatter carries every field described above, plus the outgoing edges. The body underneath is the observations, in the append-only order they were recorded:
+
+```
+---
+type: subsystem
+summary: JWT authentication and session management
+entry_points:
+  - src/auth/router.ts
+covers:
+  - src/auth/
+last_commit: 4f2a9c1
+edges:
+  - to: database type: depends_on reason: stores sessions and credential hashes
+---
+
+- Sessions expire after 30 minutes of inactivity, not on a fixed TTL <!-- id:a1b2 -->
+```
+
+A fact file is shorter: `category` and `subject` in the frontmatter, the fact content as the body.
+
+```
+---
+category: convention
+subject: builds
+---
+
+NODE_ENV must not be set when building, it breaks the bundler
+```
+
+Slugs (node names, fact categories, and fact subjects) are lowercase and cannot contain `__`. That sequence is the separator between category and subject in a fact's filename, `category__subject.md`, so allowing it in either half would let two different facts collide on one filename.
+
+Global facts are the same shape, one file per `category`/`subject`, but they live under `~/.graphene/global/` instead of a repo, and that directory is never committed: it is not part of any repo's history, so nothing there is tied to a particular clone.

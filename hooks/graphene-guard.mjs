@@ -22,13 +22,39 @@ async function getStatus(repoRoot) {
   return handleStatus(repoRoot, globalDir(), {});
 }
 
-async function getAffectedNodes(repoRoot) {
-  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || join(import.meta.dirname, "..");
-  const { listNodes, readNode } = await import(join(pluginRoot, "dist", "store.js"));
-
-  let committedFiles;
+// Only used when getRepoRoot() is null, i.e. the session's cwd is not itself
+// inside a repo. Discovers child repos beneath cwd the same way the server
+// does (dist/scope.js), so a parent-directory session gets a status section
+// per repo instead of being skipped outright. Any failure (including the
+// discoverScopes cap on too many repos) degrades to "no scopes", which the
+// caller treats the same as a plain non-repo directory: skip quietly.
+async function discoverMultiRepoScopes() {
   try {
-    committedFiles = execSync("git diff-tree --no-commit-id --name-only -r HEAD", {
+    const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || join(import.meta.dirname, "..");
+    const { discoverScopes } = await import(join(pluginRoot, "dist", "scope.js"));
+    return discoverScopes(process.cwd());
+  } catch {
+    return [];
+  }
+}
+
+// Routes through the same dispatch("status") the MCP server uses, so a
+// multi-repo session's injected status is produced by exactly the code path
+// that serves the status tool, never a hook-local reimplementation.
+async function getMultiStatus(scopes) {
+  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || join(import.meta.dirname, "..");
+  const { dispatch } = await import(join(pluginRoot, "dist", "server.js"));
+  const { globalDir } = await import(join(pluginRoot, "dist", "store.js"));
+  return dispatch({ scopes, globalDir: globalDir() }, "status", {});
+}
+
+function isGrapheneFile(file) {
+  return file === ".graphene" || file.startsWith(".graphene/");
+}
+
+function getStagedFiles(repoRoot) {
+  try {
+    return execSync("git diff --cached --name-only", {
       cwd: repoRoot,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
@@ -36,15 +62,37 @@ async function getAffectedNodes(repoRoot) {
   } catch {
     return [];
   }
+}
 
-  if (committedFiles.length === 0) return [];
+function getCommittedFiles(repoRoot) {
+  try {
+    return execSync("git diff-tree --no-commit-id --name-only -r HEAD", {
+      cwd: repoRoot,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim().split("\n").filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+// Matches `files` (either staged paths or the files a commit just touched)
+// against every node's `covers` patterns, prefix-style: a pattern's trailing
+// glob (if any) is stripped, and a file matches if it starts with what
+// remains. Shared by the pre-commit gate (staged files) and the post-commit
+// reminder (committed files) so the two never drift on what "affected" means.
+async function computeAffectedNodes(repoRoot, files) {
+  if (files.length === 0) return [];
+
+  const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || join(import.meta.dirname, "..");
+  const { listNodes, readNode } = await import(join(pluginRoot, "dist", "store.js"));
 
   const affected = [];
   for (const name of listNodes(repoRoot)) {
     const node = readNode(repoRoot, name);
     if (!node || node.covers.length === 0) continue;
 
-    const matching = committedFiles.filter(file =>
+    const matching = files.filter(file =>
       node.covers.some(pattern => file.startsWith(pattern.replace(/\*.*$/, "")))
     );
 
@@ -56,10 +104,51 @@ async function getAffectedNodes(repoRoot) {
   return affected;
 }
 
-// Status is a bounded map now: node index with observation counts, stale
-// names, and fact keys. Bodies are never injected; detail comes from
-// read(name), project_read, and global_read on demand.
-function formatStatus(status) {
+// PreToolUse gate, fired just before a `git commit` runs. Staged files
+// (rather than the eventual commit's files, which do not exist yet) are
+// compared against node covers. Silent unless there is something staged that
+// a node covers and no `.graphene/` path is staged alongside it -- once
+// `.graphene/` is part of what is about to be committed, the graph is already
+// riding this commit and there is nothing to gate.
+async function buildPreCommitMessage(repoRoot) {
+  const staged = getStagedFiles(repoRoot);
+  if (staged.length === 0) return null;
+  if (staged.some(isGrapheneFile)) return null;
+
+  const affected = await computeAffectedNodes(repoRoot, staged);
+  if (affected.length === 0) return null;
+
+  return "You are about to commit. These graphene nodes cover staged files:" +
+    affected.map(a => `\n  - ${a.name} (${a.files.join(", ")})`).join("") +
+    "\n\nUpdate them NOW (learn / upsert_node / last_commit) and stage the .graphene/ changes, " +
+    "so the graph rides this commit. Then re-run the commit.";
+}
+
+// PostToolUse follow-up, fired just after `git commit` returns. Now that the
+// pre-commit gate above is the primary enforcement point, this is only a
+// light backstop: silent whenever the commit already carried `.graphene/`
+// changes (the desired end state) or touched no covered files at all.
+async function buildPostCommitMessage(repoRoot) {
+  const committed = getCommittedFiles(repoRoot);
+  if (committed.length === 0) return null;
+  if (committed.some(isGrapheneFile)) return null;
+
+  const affected = await computeAffectedNodes(repoRoot, committed);
+  if (affected.length === 0) return null;
+
+  return "This commit touched files these graphene nodes cover, but .graphene/ was not part of it:" +
+    affected.map(a => `\n  - ${a.name} (${a.files.join(", ")})`).join("") +
+    "\n\nUpdate them, then `git commit --amend` (or a follow-up commit), so the graph catches up.";
+}
+
+// Renders one repo's status the same way regardless of whether it is the
+// only repo in the session or one section of a multi-repo one. Status is a
+// bounded map: node index with observation counts, stale names, and fact
+// keys. Bodies are never injected; detail comes from read(name), project_read,
+// and global_read on demand. `global_facts` is optional here because
+// multi-repo per-repo entries omit it (globals are session-wide, not
+// per-repo -- see formatMultiStatus).
+function formatStatusBody(status) {
   const lines = [`HEAD: ${status.head}`];
 
   if (status.nodes.length === 0) {
@@ -85,12 +174,43 @@ function formatStatus(status) {
     lines.push(`  ${status.project_facts.keys.join(", ")}`);
   }
 
-  if (status.global_facts.count > 0) {
+  if (status.global_facts && status.global_facts.count > 0) {
     lines.push(`Global facts (${status.global_facts.count}), read with global_read:`);
     lines.push(`  ${status.global_facts.keys.join(", ")}`);
   }
 
   return lines.join("\n");
+}
+
+// Multi-repo shape from dispatch(ctx, "status", {}): { repos: [...], global_facts }.
+// One section per repo, `=== name ===` style, using the same body lines as
+// the single-repo case; a repo whose own status call failed (e.g. a freshly
+// `git init`ed sibling with no commits) renders as a one-line error instead of
+// dropping the whole injection. Globals are printed once at the end, since
+// they are session-wide rather than per-repo.
+function formatMultiStatus(status) {
+  const sections = status.repos.map((repo) => {
+    const header = `=== ${repo.repo} ===`;
+    if ("error" in repo) {
+      return `${header}\nstatus unavailable: ${repo.error}`;
+    }
+    return `${header}\n${formatStatusBody(repo)}`;
+  });
+
+  if (status.global_facts.count > 0) {
+    sections.push(
+      `Global facts (${status.global_facts.count}), read with global_read:\n  ${status.global_facts.keys.join(", ")}`
+    );
+  }
+
+  return sections.join("\n\n");
+}
+
+// Single-repo status has no `repos` field, so this dispatches on shape rather
+// than needing the caller to know which one it built.
+function formatStatus(status) {
+  if (Array.isArray(status.repos)) return formatMultiStatus(status);
+  return formatStatusBody(status);
 }
 
 // Graphene tools surface under different prefixes depending on how the server
@@ -176,31 +296,23 @@ async function main() {
 
     if (/git\s+commit/.test(command)) {
       const repoRoot = getRepoRoot();
-      let message = "You just committed code.";
+      let message = null;
 
       if (repoRoot) {
         try {
-          const affected = await getAffectedNodes(repoRoot);
-          if (affected.length > 0) {
-            message += "\n\nThese graphene nodes cover files in this commit:" +
-              affected.map(a => `\n  - ${a.name} (${a.files.join(", ")})`).join("") +
-              "\n\nYou MUST review and update each affected node:" +
-              "\n  1. Record what changed with learn(node, observation)" +
-              "\n  2. Update summary if the purpose shifted" +
-              "\n  3. Update entry_points and covers if files were added/renamed" +
-              "\n  4. Set last_commit to the new HEAD" +
-              "\nBumping last_commit alone is not sufficient.";
-          }
+          message = await buildPostCommitMessage(repoRoot);
         } catch {}
       }
 
       writeState(session_id, state);
-      process.stdout.write(JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: "PostToolUse",
-          additionalContext: message,
-        },
-      }));
+      if (message) {
+        process.stdout.write(JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "PostToolUse",
+            additionalContext: message,
+          },
+        }));
+      }
     } else if (/git\s+push/.test(command)) {
       writeState(session_id, state);
       process.stdout.write(JSON.stringify({
@@ -224,27 +336,42 @@ async function main() {
     }
 
     const repoRoot = getRepoRoot();
-    if (!repoRoot) {
-      writeState(session_id, state);
-      process.exit(0);
-    }
-
     const messages = [];
 
     if (!state.status_injected) {
       try {
-        const status = await getStatus(repoRoot);
-        state.status_injected = true;
-        messages.push(
-          "Graphene context graph for this repo:\n" +
-          formatStatus(status) + "\n\n" +
-          "You MUST call read(name) on relevant nodes before working on any subsystem. " +
-          "The graph contains entry_points, observations, and edges that prevent wasted tool calls. " +
-          "After changing code, you MUST update affected nodes with learn() and last_commit."
-        );
+        let status;
+        if (repoRoot) {
+          status = await getStatus(repoRoot);
+        } else {
+          const scopes = await discoverMultiRepoScopes();
+          status = scopes.length > 0 ? await getMultiStatus(scopes) : null;
+        }
+        if (status) {
+          messages.push(
+            "Graphene context graph for this repo:\n" +
+            formatStatus(status) + "\n\n" +
+            "You MUST call read(name) on relevant nodes before working on any subsystem. " +
+            "The graph contains entry_points, observations, and edges that prevent wasted tool calls. " +
+            "After changing code, you MUST update affected nodes with learn() and last_commit."
+          );
+        }
       } catch {
-        state.status_injected = true;
+        // fall through; still mark injected below so a persistent failure
+        // (e.g. a corrupt node file) does not retry on every tool call
       }
+      state.status_injected = true;
+    }
+
+    // The commit gate is single-repo only: a commit's cwd is always inside
+    // exactly one repo, so getRepoRoot() (not multi-repo scope discovery)
+    // is already the right answer, and it is skipped entirely in a
+    // parent-directory multi-repo session where getRepoRoot() is null.
+    if (repoRoot && tool_name === "Bash" && /git\s+commit/.test(tool_input?.command || "")) {
+      try {
+        const preCommit = await buildPreCommitMessage(repoRoot);
+        if (preCommit) messages.push(preCommit);
+      } catch {}
     }
 
     writeState(session_id, state);

@@ -50,6 +50,8 @@ description: Populate the graphene context graph for a new repo. Use when the gr
 
 6. After creating nodes, add observations for anything non-obvious you noticed during exploration. Use `learn(node_name, content)` for each.
 
+7. Stage and commit `.graphene/`. The graph lives in this repo, under `.graphene/`, and is committed with the code, not gitignored. Once the graph is populated, `git add .graphene` and commit it, so the next clone gets the graph too.
+
 ## Migrate ALL memory to graphene
 
 Graphene replaces auto-memory entirely. There is no valid reason to keep anything in memory files when graphene is installed. Check for memory files in `~/.claude/projects/*/memory/` and any CLAUDE.md entries that contain learned facts.

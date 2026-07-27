@@ -10,6 +10,8 @@ The agent maps the top-level structure, identifies 5 to 15 logical subsystems, a
 
 The skill pushes hard on quality over count. Fewer complete nodes beat many thin ones. A node is meant to be answer-shaped, "where does permission handling happen end to end," not just a list of permission files. Cross-cutting concerns become edges, not nodes. If a node cannot be given a summary, `covers`, and `entry_points`, the skill says to skip it rather than create a stub.
 
+The graph it produces lives under `.graphene/` in the repo, and is committed with the code, the same as any other file (see [Installation](installation.md)). The skill's last step is staging and committing it, not leaving a pile of new files sitting uncommitted.
+
 ### Memory migration
 
 `init` also migrates existing agent memory into graphene, because two memory systems means every future session has to check both. It moves:

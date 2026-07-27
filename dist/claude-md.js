@@ -9,10 +9,11 @@ export const GRAPHENE_MARKER_END = "<!-- /graphene -->";
 export const GRAPHENE_RULES = `## Graphene Context Graph
 
 ### Rules
-1. Do NOT read files, grep, or explore until you have called \`read(name)\` on every relevant node. The graph status is injected automatically on your first tool call. Read it.
+1. Do NOT read files, grep, or explore until you have called \`read(name)\` on every relevant node. The graph status is injected automatically on your first tool call. Read it. It shows a bounded snapshot: the node index, counts, and fact keys, never bodies. Call \`read(name)\`, \`project_read()\`, or \`global_read()\` for actual content.
 2. Do NOT use auto-memory. Graphene replaces it. Use \`project_write()\` or \`global_write()\`.
 3. You MUST record discoveries immediately. Not later. Not after the push. Now.
-4. If the graph is empty, run \`/graphene:init\` or populate with \`batch()\` before doing anything else.
+4. The graph lives in this repo, under \`.graphene/\`, and is committed with the code. Update affected nodes BEFORE \`git commit\` and stage the \`.graphene/\` changes, so the graph rides the same commit as the code it describes. Bumping \`last_commit\` alone is still not sufficient.
+5. If the graph is empty, run \`/graphene:init\` or populate with \`batch()\` before doing anything else.
 
 ### You MUST record when
 The trigger is what you learned, not whether a node exists. There is always a home: an existing node, a new node, or a project/global fact.
@@ -21,10 +22,13 @@ The trigger is what you learned, not whether a node exists. There is always a ho
 - The user corrected you or stated a preference: \`project_write()\` if repo-specific, \`global_write()\` if cross-repo. If unsure, ask.
 - You spent 3+ tool calls finding something: record where you found it
 
+### Multi-repo sessions
+A session rooted in a parent directory that holds more than one repo puts every one of them in scope at once. Nodes qualify as \`repo:name\`. A bare name still resolves if it is unique across the repos in scope, otherwise qualify it. Cross-repo edges are rejected: \`link\`, \`unlink\`, and edges passed to \`batch\` require both ends to resolve to the same repo. \`project_read\`, \`project_write\`, and \`project_delete\` take a \`repo\` argument, required once more than one repo is in scope.
+
 ### Tools: reading
-- \`status()\` - auto-injected at session start. Call manually to refresh.
+- \`status()\` - auto-injected at session start. Call manually to refresh. Bounded: the node index, stale nodes, and project/global fact keys, never observation or fact bodies.
 - \`read()\` - no args returns full node index. \`read(name)\` returns node detail: entry_points, observations, edges, dependents.
-- \`search(query)\` - search across nodes, observations, project facts, global facts, and edge reasons. Multi-word queries match any word, ranked by relevance.
+- \`search(query)\` - search across nodes, observations, project facts, global facts, and edge reasons. Multi-word queries match any word, ranked by relevance. Returns at most the top 20 results, each with a truncated snippet.
 - \`stale()\` - check which nodes have changed files since their last_commit.
 - \`project_read(category?, subject?, repo?)\` - read project facts. No args returns all.
 - \`global_read(category?, subject?)\` - read global facts. No args returns all.
@@ -55,7 +59,8 @@ The trigger is what you learned, not whether a node exists. There is always a ho
 | "This change is too small to record" | Small discoveries compound. Record it. |
 | "This is just a fix, not a discovery" | Constraints and boundaries ARE discoveries. Record them. |
 | "No node covers this file, so nothing to record" | Wrong. Absence of a node is a gap. Create one if it is a real subsystem, else \`project_write()\` the convention. |
-| "I'll keep this in memory instead" | No. Graphene replaces memory. Use project_write or global_write. |`;
+| "I'll keep this in memory instead" | No. Graphene replaces memory. Use project_write or global_write. |
+| "I'll update the graph after committing" | Too late. The commit gate told you before: update nodes first so the graph rides the same commit. |`;
 // One-time migration. Earlier versions wrote GRAPHENE_RULES into the repo's
 // CLAUDE.md between the markers. This removes that block if present, preserving
 // any surrounding user content, and deletes CLAUDE.md outright if the block was

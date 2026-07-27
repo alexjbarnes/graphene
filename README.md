@@ -8,15 +8,15 @@ An AI agent starts every session blind. It re-reads the same files, re-derives t
 
 Graphene gives the agent a memory that survives. It stores a graph of your codebase: subsystems as nodes, the relationships between them as edges, and the observations an agent records while working. The next session reads the graph instead of starting from zero.
 
-The hard part of agent memory is not storage. It is discipline. Agents forget to read what earlier sessions saved, and forget to record what they just learned. Graphene ships behavioral enforcement to close that gap: a hook injects the graph on the first tool call, a commit gate flags the nodes a change touched, and a SessionStart hook keeps the rules in front of the agent at startup and after every compaction.
+The hard part of agent memory is not storage. It is discipline. Agents forget to read what earlier sessions saved, and forget to record what they just learned. Graphene ships behavioral enforcement to close that gap: a hook injects the graph on the first tool call, a commit gate flags the nodes a change touches before the commit lands, and a SessionStart hook keeps the rules in front of the agent at startup and after every compaction.
 
 Three things follow:
 
 1. **Sessions compound.** What one session learns, the next one reads. The graph is the shared notebook every session writes back to.
 2. **Less wasted exploration.** Each node carries `entry_points` and observations, so the agent jumps straight to the files that matter instead of grepping its way back to them.
-3. **Recording happens, instead of being hoped for.** The enforcement layer turns "you should update the graph" into a prompt the agent sees at the moments that matter: first tool call, and every commit.
+3. **Recording happens, instead of being hoped for.** The enforcement layer turns "you should update the graph" into a prompt the agent sees at the moments that matter: first tool call, and right before every commit.
 
-The graph lives in your repo at `.graphene/context.db`. User-level preferences that span repos live in `~/.graphene/global.db`.
+The graph lives in your repo as markdown files under `.graphene/`, committed alongside your code. User-level preferences that span repos live in `~/.graphene/global/`.
 
 ## Quick start
 
@@ -41,22 +41,22 @@ See [Installation](docs/installation.md) for the standalone MCP setup and data l
 
 ## Prerequisites
 
-- Node.js >= 20.11 (the hooks use `import.meta.dirname`)
+- Node.js >= 20.11 (the hooks use `import.meta.dirname`) runs graphene. Migrating a legacy SQLite graph from before v0.11 additionally needs Node.js >= 22.5, once: the server tells you so and skips the migration otherwise, retrying on the next start.
 - [Claude Code](https://www.npmjs.com/package/@anthropic-ai/claude-code) for the enforcement layer. The MCP server alone works with any MCP client, but the hooks, skills, and rules injection are Claude Code features.
-- `git`. Staleness detection and the commit gate read the repo's git history.
+- `git`. Staleness detection and the commit gate read the repo's git history and staged files.
 
 ## How it works
 
 Graphene is two layers.
 
-The **MCP server** stores and serves the graph. It exposes 17 tools across reading (`status`, `read`, `search`, `stale`), recording (`learn`, `upsert_node`, `link`, `batch`, `project_write`, `global_write`), and cleanup. Data sits in SQLite, run in-process through `sql.js`. See [Tools](docs/tools.md) and [Concepts](docs/concepts.md).
+The **MCP server** stores and serves the graph. It exposes 19 tools across reading (`status`, `read`, `search`, `stale`), recording (`learn`, `upsert_node`, `link`, `batch`, `project_write`, `global_write`, `globals_export`, `globals_import`), and cleanup. Data sits in plain markdown: one file per node under `.graphene/nodes/`, one file per fact under `.graphene/facts/`, committed with the rest of the repo. See [Tools](docs/tools.md) and [Concepts](docs/concepts.md).
 
-The **enforcement layer** is a set of Claude Code hooks. On the first tool call of a session, a `PreToolUse` hook injects the current graph. After every `git commit`, a `PostToolUse` hook lists the nodes whose covered files changed and tells the agent to update them. See [Enforcement](docs/enforcement.md).
+The **enforcement layer** is a set of Claude Code hooks. On the first tool call of a session, a `PreToolUse` hook injects the current graph. Right before a `git commit` runs, that same hook compares staged files against every node's covered paths and tells the agent which nodes to update, so the graph rides the same commit as the code it describes. A lighter `PostToolUse` reminder only fires when a commit went through without its `.graphene/` update. See [Enforcement](docs/enforcement.md).
 
 ## Documentation
 
 - [Concepts](docs/concepts.md): nodes, edges, observations, project and global facts, and how scope is decided
-- [Tools](docs/tools.md): the full reference for all 17 MCP tools
+- [Tools](docs/tools.md): the full reference for all 19 MCP tools
 - [Enforcement](docs/enforcement.md): the hook layer, status injection, the commit gate, session state, and the SessionStart rules injection
 - [Staleness](docs/staleness.md): how `covers` and `last_commit` let the graph detect its own drift
 - [Skills](docs/skills.md): the `init` and `refresh` slash commands

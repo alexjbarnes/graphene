@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { execFileSync, execSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { createTestGitRepo, type TestRepo } from "../helpers.js";
 
 const SCRIPT = join(import.meta.dirname, "../../hooks/graphene-guard.mjs");
 let tempHome: string;
@@ -229,15 +230,74 @@ describe("graphene-guard hook", () => {
   });
 
   describe("PostToolUse - git commit reminder", () => {
-    it("returns reminder on git commit", () => {
+    let repoPath: string;
+
+    // Every test in this block starts from a repo that already has a
+    // committed node covering src/auth, so each `it` only has to stage and
+    // commit the specific combination of files it wants to assert on.
+    beforeEach(() => {
+      repoPath = createTempGitRepo();
+      mkdirSync(join(repoPath, ".graphene", "nodes"), { recursive: true });
+      mkdirSync(join(repoPath, "src"), { recursive: true });
+      writeFileSync(
+        join(repoPath, ".graphene", "nodes", "auth.md"),
+        "---\ntype: subsystem\ncovers:\n  - src/auth\n---\n"
+      );
+      execSync("git add -A && git commit -m 'add auth node'", { cwd: repoPath, stdio: "ignore" });
+    });
+
+    afterEach(() => {
+      rmSync(repoPath, { recursive: true, force: true });
+    });
+
+    it("reminds to update nodes when the commit touched covered files without .graphene/", () => {
+      writeFileSync(join(repoPath, "src", "auth.ts"), "export const login = () => {};\n");
+      execSync("git add src/auth.ts && git commit -m 'add login'", { cwd: repoPath, stdio: "ignore" });
+
       const { stdout } = run({
         session_id: "s1",
         hook_event_name: "PostToolUse",
         tool_name: "Bash",
-        tool_input: { command: 'git commit -m "fix auth bug"' },
-      });
+        tool_input: { command: 'git commit -m "add login"' },
+      }, { cwd: repoPath });
+
       const output = parseOutput(stdout);
-      expect(output.hookSpecificOutput.additionalContext).toContain("You just committed code");
+      const ctx = output.hookSpecificOutput.additionalContext;
+      expect(ctx).toContain("This commit touched files these graphene nodes cover, but .graphene/ was not part of it:");
+      expect(ctx).toContain("auth (src/auth.ts)");
+      expect(ctx).toContain("git commit --amend");
+    });
+
+    it("stays silent when the commit included .graphene/ changes alongside covered files", () => {
+      writeFileSync(join(repoPath, "src", "auth.ts"), "export const login = () => {};\n");
+      writeFileSync(
+        join(repoPath, ".graphene", "nodes", "auth.md"),
+        "---\ntype: subsystem\ncovers:\n  - src/auth\n---\n\n- Added login export <!-- id:abcd -->\n"
+      );
+      execSync("git add -A && git commit -m 'add login'", { cwd: repoPath, stdio: "ignore" });
+
+      const { stdout } = run({
+        session_id: "s1",
+        hook_event_name: "PostToolUse",
+        tool_name: "Bash",
+        tool_input: { command: 'git commit -m "add login"' },
+      }, { cwd: repoPath });
+
+      expect(stdout.trim()).toBe("");
+    });
+
+    it("stays silent when the commit touched no covered files", () => {
+      writeFileSync(join(repoPath, "README.md"), "docs\n");
+      execSync("git add README.md && git commit -m docs", { cwd: repoPath, stdio: "ignore" });
+
+      const { stdout } = run({
+        session_id: "s1",
+        hook_event_name: "PostToolUse",
+        tool_name: "Bash",
+        tool_input: { command: 'git commit -m "docs"' },
+      }, { cwd: repoPath });
+
+      expect(stdout.trim()).toBe("");
     });
 
     it("returns reminder on git push", () => {
@@ -246,7 +306,7 @@ describe("graphene-guard hook", () => {
         hook_event_name: "PostToolUse",
         tool_name: "Bash",
         tool_input: { command: "git push origin main" },
-      });
+      }, { cwd: repoPath });
       const output = parseOutput(stdout);
       expect(output.hookSpecificOutput.additionalContext).toContain("You just pushed code");
     });
@@ -257,7 +317,7 @@ describe("graphene-guard hook", () => {
         hook_event_name: "PostToolUse",
         tool_name: "Bash",
         tool_input: { command: "npm test" },
-      });
+      }, { cwd: repoPath });
       expect(stdout.trim()).toBe("");
     });
 
@@ -267,8 +327,191 @@ describe("graphene-guard hook", () => {
         hook_event_name: "PostToolUse",
         tool_name: "Bash",
         tool_input: { command: "git status && git diff" },
-      });
+      }, { cwd: repoPath });
       expect(stdout.trim()).toBe("");
+    });
+  });
+
+  describe("PreToolUse - pre-commit gate", () => {
+    let repoPath: string;
+
+    // As above: a repo with one node already committed, covering src/auth.
+    // The one-time status injection is consumed here too, via a throwaway
+    // Read call, so every `it` below can assert on the gate message alone.
+    beforeEach(() => {
+      repoPath = createTempGitRepo();
+      mkdirSync(join(repoPath, ".graphene", "nodes"), { recursive: true });
+      mkdirSync(join(repoPath, "src"), { recursive: true });
+      writeFileSync(
+        join(repoPath, ".graphene", "nodes", "auth.md"),
+        "---\ntype: subsystem\ncovers:\n  - src/auth\n---\n"
+      );
+      execSync("git add -A && git commit -m 'add auth node'", { cwd: repoPath, stdio: "ignore" });
+
+      run({ session_id: "s1", hook_event_name: "PreToolUse", tool_name: "Read", tool_input: {} }, { cwd: repoPath });
+    });
+
+    afterEach(() => {
+      rmSync(repoPath, { recursive: true, force: true });
+    });
+
+    it("fires when a staged file is covered by a node and .graphene/ is not staged", () => {
+      writeFileSync(join(repoPath, "src", "auth.ts"), "export const login = () => {};\n");
+      execSync("git add src/auth.ts", { cwd: repoPath, stdio: "ignore" });
+
+      const { stdout } = run({
+        session_id: "s1",
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: { command: 'git commit -m "add login"' },
+      }, { cwd: repoPath });
+
+      const output = parseOutput(stdout);
+      const ctx = output.hookSpecificOutput.additionalContext;
+      expect(ctx).toContain("You are about to commit. These graphene nodes cover staged files:");
+      expect(ctx).toContain("auth (src/auth.ts)");
+      expect(ctx).toContain(
+        "Update them NOW (learn / upsert_node / last_commit) and stage the .graphene/ changes, " +
+        "so the graph rides this commit. Then re-run the commit."
+      );
+    });
+
+    it("does not block the tool call, only injects context", () => {
+      writeFileSync(join(repoPath, "src", "auth.ts"), "export const login = () => {};\n");
+      execSync("git add src/auth.ts", { cwd: repoPath, stdio: "ignore" });
+
+      const { stdout } = run({
+        session_id: "s1",
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: { command: 'git commit -m "add login"' },
+      }, { cwd: repoPath });
+
+      const output = parseOutput(stdout);
+      expect(output.hookSpecificOutput.hookEventName).toBe("PreToolUse");
+      expect(output).not.toHaveProperty("decision");
+      expect(output).not.toHaveProperty("permissionDecision");
+    });
+
+    it("stays silent when .graphene/ is staged alongside the covered file", () => {
+      writeFileSync(join(repoPath, "src", "auth.ts"), "export const login = () => {};\n");
+      writeFileSync(
+        join(repoPath, ".graphene", "nodes", "auth.md"),
+        "---\ntype: subsystem\ncovers:\n  - src/auth\n---\n\n- Added login export <!-- id:abcd -->\n"
+      );
+      execSync("git add -A", { cwd: repoPath, stdio: "ignore" });
+
+      const { stdout } = run({
+        session_id: "s1",
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: { command: 'git commit -m "add login"' },
+      }, { cwd: repoPath });
+
+      expect(stdout.trim()).toBe("");
+    });
+
+    it("stays silent when no staged file is covered by any node", () => {
+      writeFileSync(join(repoPath, "README.md"), "docs\n");
+      execSync("git add README.md", { cwd: repoPath, stdio: "ignore" });
+
+      const { stdout } = run({
+        session_id: "s1",
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: { command: 'git commit -m "docs"' },
+      }, { cwd: repoPath });
+
+      expect(stdout.trim()).toBe("");
+    });
+
+    it("stays silent when nothing is staged", () => {
+      const { stdout } = run({
+        session_id: "s1",
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: { command: 'git commit -m "empty"' },
+      }, { cwd: repoPath });
+
+      expect(stdout.trim()).toBe("");
+    });
+  });
+
+  describe("PreToolUse - multi-repo status injection", () => {
+    let parent: string;
+    let portal: TestRepo;
+    let worker: TestRepo;
+
+    beforeEach(() => {
+      parent = mkdtempSync(join(tmpdir(), "graphene-hook-multi-"));
+      portal = createTestGitRepo(parent, "portal");
+      worker = createTestGitRepo(parent, "worker");
+      portal.writeFile(".graphene/nodes/auth.md", "---\ntype: subsystem\nsummary: Portal auth\n---\n");
+    });
+
+    afterEach(() => {
+      portal.cleanup();
+      worker.cleanup();
+      rmSync(parent, { recursive: true, force: true });
+    });
+
+    it("renders a section per repo when cwd holds several child repos", () => {
+      const { stdout } = run({
+        session_id: "s1",
+        hook_event_name: "PreToolUse",
+        tool_name: "Read",
+        tool_input: {},
+      }, { cwd: parent });
+
+      const output = parseOutput(stdout);
+      const ctx = output.hookSpecificOutput.additionalContext;
+      expect(ctx).toContain("=== portal ===");
+      expect(ctx).toContain("=== worker ===");
+      expect(ctx).toContain("auth [subsystem]");
+      expect(ctx).toContain("Portal auth");
+    });
+
+    it("sets status_injected in state for a multi-repo session", () => {
+      const { state } = run({
+        session_id: "s1",
+        hook_event_name: "PreToolUse",
+        tool_name: "Read",
+        tool_input: {},
+      }, { cwd: parent });
+      expect(state?.status_injected).toBe(true);
+    });
+
+    it("renders a status-unavailable line for a repo whose status call fails", () => {
+      const broken = join(parent, "broken");
+      mkdirSync(broken, { recursive: true });
+      execSync("git init", { cwd: broken, stdio: "ignore" });
+
+      const { stdout } = run({
+        session_id: "s2",
+        hook_event_name: "PreToolUse",
+        tool_name: "Read",
+        tool_input: {},
+      }, { cwd: parent });
+
+      const output = parseOutput(stdout);
+      const ctx = output.hookSpecificOutput.additionalContext;
+      expect(ctx).toContain("=== broken ===");
+      expect(ctx).toContain("status unavailable:");
+    });
+
+    it("skips quietly when the parent directory has zero child repos", () => {
+      const empty = mkdtempSync(join(tmpdir(), "graphene-hook-multi-empty-"));
+      try {
+        const { stdout } = run({
+          session_id: "s1",
+          hook_event_name: "PreToolUse",
+          tool_name: "Read",
+          tool_input: {},
+        }, { cwd: empty });
+        expect(stdout.trim()).toBe("");
+      } finally {
+        rmSync(empty, { recursive: true, force: true });
+      }
     });
   });
 

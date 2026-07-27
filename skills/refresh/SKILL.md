@@ -25,3 +25,4 @@ Call `stale` to see which nodes need attention, then for each stale node:
 - Remove observations that are no longer true.
 - If a node's subsystem was deleted or merged, use `delete_node(name)` to clean it up.
 - After refreshing, the stale report should be empty.
+- The graph lives under `.graphene/` in this repo and is committed with the code. Stage and commit the updated node files, ideally in the same commit as whatever code change prompted the refresh.
