@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { createServer } from "../src/server.js";
 import { createTestGitRepo, createTestGlobalDir, type TestRepo, type TestGlobalDir } from "./helpers.js";
 
@@ -19,7 +19,7 @@ describe("server initialization", () => {
   });
 
   it("does not create CLAUDE.md when none exists", () => {
-    const server = createServer({ repoRoot: repo.path, globalDir: global.dir });
+    const server = createServer({ scopes: [{ name: basename(repo.path), root: repo.path }], globalDir: global.dir });
     const claudeMdPath = join(repo.path, "CLAUDE.md");
 
     expect(existsSync(claudeMdPath)).toBe(false);
@@ -35,7 +35,7 @@ describe("server initialization", () => {
       "# My Project\n\nCustom rules here.\n\n<!-- graphene -->\n## Graphene Context Graph\nold rules\n<!-- /graphene -->\n\n## My Section\n\nKeep this.\n"
     );
 
-    const server = createServer({ repoRoot: repo.path, globalDir: global.dir });
+    const server = createServer({ scopes: [{ name: basename(repo.path), root: repo.path }], globalDir: global.dir });
     server.oninitialized!();
 
     const content = readFileSync(claudeMdPath, "utf-8");
@@ -51,7 +51,7 @@ describe("server initialization", () => {
     const claudeMdPath = join(repo.path, "CLAUDE.md");
     writeFileSync(claudeMdPath, "<!-- graphene -->\n## Graphene Context Graph\nold rules\n<!-- /graphene -->\n");
 
-    const server = createServer({ repoRoot: repo.path, globalDir: global.dir });
+    const server = createServer({ scopes: [{ name: basename(repo.path), root: repo.path }], globalDir: global.dir });
     server.oninitialized!();
 
     expect(existsSync(claudeMdPath)).toBe(false);
@@ -61,7 +61,7 @@ describe("server initialization", () => {
     const claudeMdPath = join(repo.path, "CLAUDE.md");
     writeFileSync(claudeMdPath, "# Project\n\n<!-- graphene -->\n## Graphene Context Graph\nruns to end of file\n");
 
-    const server = createServer({ repoRoot: repo.path, globalDir: global.dir });
+    const server = createServer({ scopes: [{ name: basename(repo.path), root: repo.path }], globalDir: global.dir });
     server.oninitialized!();
 
     const content = readFileSync(claudeMdPath, "utf-8");
@@ -74,7 +74,7 @@ describe("server initialization", () => {
     const original = "# My Project\n\nJust my own rules.\n";
     writeFileSync(claudeMdPath, original);
 
-    const server = createServer({ repoRoot: repo.path, globalDir: global.dir });
+    const server = createServer({ scopes: [{ name: basename(repo.path), root: repo.path }], globalDir: global.dir });
     server.oninitialized!();
 
     expect(readFileSync(claudeMdPath, "utf-8")).toBe(original);
@@ -84,7 +84,7 @@ describe("server initialization", () => {
     const claudeMdPath = join(repo.path, "CLAUDE.md");
     writeFileSync(claudeMdPath, "# Project\n\n<!-- graphene -->\n## Graphene Context Graph\nold\n<!-- /graphene -->\n");
 
-    const server = createServer({ repoRoot: repo.path, globalDir: global.dir });
+    const server = createServer({ scopes: [{ name: basename(repo.path), root: repo.path }], globalDir: global.dir });
     server.oninitialized!();
     const first = readFileSync(claudeMdPath, "utf-8");
 
@@ -96,7 +96,7 @@ describe("server initialization", () => {
   });
 
   it("does not touch CLAUDE.md when there is no repo root", () => {
-    const server = createServer({ repoRoot: null, globalDir: global.dir });
+    const server = createServer({ scopes: [], globalDir: global.dir });
     expect(() => server.oninitialized!()).not.toThrow();
   });
 });

@@ -1,18 +1,13 @@
 #!/usr/bin/env node
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { getRepoRoot } from "./git.js";
+import { discoverScopes } from "./scope.js";
 import { globalDir } from "./store.js";
 import { createServer } from "./server.js";
 
-let repoRoot: string | null;
-try {
-  repoRoot = getRepoRoot();
-} catch {
-  repoRoot = null;
-}
+const scopes = discoverScopes(process.cwd());
 
-const server = createServer({ repoRoot, globalDir: globalDir() });
+const server = createServer({ scopes, globalDir: globalDir() });
 const transport = new StdioServerTransport();
 
 process.on("SIGTERM", () => process.exit(0));

@@ -6,7 +6,7 @@
 // in disposable directories.
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 import { execSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -167,5 +167,97 @@ describe("e2e: compiled server over MCP stdio", () => {
     const indexResult = await session.client.callTool({ name: "read", arguments: {} });
     const index = parseResult<{ nodes: unknown[] }>(indexResult as CallToolResult);
     expect(index.nodes).toHaveLength(0);
+  });
+});
+
+// A second server-session flavor: cwd is the parent of two child git repos
+// (no repo of its own), so discoverScopes finds both and the server runs the
+// multi-repo dispatch path. Everything else about the transport is identical
+// to startSession/stopSession above.
+interface MultiSession {
+  client: Client;
+  parent: string;
+  home: string;
+}
+
+async function startMultiRepoSession(): Promise<MultiSession> {
+  const parent = mkdtempSync(join(tmpdir(), "graphene-e2e-multi-"));
+  const home = mkdtempSync(join(tmpdir(), "graphene-e2e-home-"));
+
+  for (const name of ["portal", "worker"]) {
+    const repoPath = join(parent, name);
+    mkdirSync(repoPath, { recursive: true });
+    execSync("git init", { cwd: repoPath, stdio: "ignore" });
+    execSync("git config user.email test@test.com", { cwd: repoPath, stdio: "ignore" });
+    execSync("git config user.name Test", { cwd: repoPath, stdio: "ignore" });
+    execSync("git commit --allow-empty -m init", { cwd: repoPath, stdio: "ignore" });
+  }
+
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [DIST_INDEX],
+    cwd: parent,
+    env: { ...process.env, HOME: home },
+  });
+  const client = new Client({ name: "graphene-e2e-multi-test", version: "0.0.1" });
+  await client.connect(transport);
+
+  return { client, parent, home };
+}
+
+async function stopMultiRepoSession(session: MultiSession): Promise<void> {
+  await session.client.close();
+  rmSync(session.parent, { recursive: true, force: true });
+  rmSync(session.home, { recursive: true, force: true });
+}
+
+describe("e2e: multi-repo session over MCP stdio", () => {
+  let session: MultiSession;
+
+  beforeEach(async () => {
+    session = await startMultiRepoSession();
+  }, 20000);
+
+  afterEach(async () => {
+    await stopMultiRepoSession(session);
+  });
+
+  it("aggregated read index carries repo fields, and a qualified learn round-trips", async () => {
+    await session.client.callTool({
+      name: "upsert_node",
+      arguments: { name: "portal:auth", type: "subsystem", summary: "Portal auth" },
+    });
+    await session.client.callTool({
+      name: "upsert_node",
+      arguments: { name: "worker:queue", type: "subsystem", summary: "Job queue" },
+    });
+
+    const indexResult = await session.client.callTool({ name: "read", arguments: {} });
+    const index = parseResult<{ nodes: Array<{ repo: string; name: string; type: string; summary: string }> }>(
+      indexResult as CallToolResult
+    );
+    expect(index.nodes).toEqual([
+      { repo: "portal", name: "auth", type: "subsystem", summary: "Portal auth" },
+      { repo: "worker", name: "queue", type: "subsystem", summary: "Job queue" },
+    ]);
+
+    const learnResult = await session.client.callTool({
+      name: "learn",
+      arguments: { node_name: "portal:auth", content: "Uses JWT, not sessions" },
+    });
+    const learned = parseResult<{ id: string; node_name: string }>(learnResult as CallToolResult);
+    expect(learned.node_name).toBe("auth");
+
+    const readResult = await session.client.callTool({ name: "read", arguments: { name: "portal:auth" } });
+    const node = parseResult<{
+      repo: string;
+      name: string;
+      observations: Array<{ id: string; content: string }>;
+    }>(readResult as CallToolResult);
+    expect(node.repo).toBe("portal");
+    expect(node.name).toBe("auth");
+    expect(node.observations).toHaveLength(1);
+    expect(node.observations[0].id).toBe(learned.id);
+    expect(node.observations[0].content).toBe("Uses JWT, not sessions");
   });
 });

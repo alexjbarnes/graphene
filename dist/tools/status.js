@@ -3,7 +3,9 @@ import { getChangedFiles, getHead } from "../git.js";
 const KEYS_CAP = 50;
 // Caps a list of "category/subject" keys so status can never grow unbounded:
 // full fact bodies are never included, only counts and a capped key list.
-function boundedKeys(keys) {
+// Exported so multi-repo status (server.ts) can compute global_facts once,
+// against the real globalDir, with the exact same capping.
+export function boundedKeys(keys) {
     if (keys.length <= KEYS_CAP)
         return keys;
     return [...keys.slice(0, KEYS_CAP), `+${keys.length - KEYS_CAP} more`];

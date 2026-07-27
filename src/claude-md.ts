@@ -28,7 +28,7 @@ The trigger is what you learned, not whether a node exists. There is always a ho
 - \`read()\` - no args returns full node index. \`read(name)\` returns node detail: entry_points, observations, edges, dependents.
 - \`search(query)\` - search across nodes, observations, project facts, global facts, and edge reasons. Multi-word queries match any word, ranked by relevance.
 - \`stale()\` - check which nodes have changed files since their last_commit.
-- \`project_read(category?, subject?)\` - read project facts. No args returns all.
+- \`project_read(category?, subject?, repo?)\` - read project facts. No args returns all.
 - \`global_read(category?, subject?)\` - read global facts. No args returns all.
 
 ### Tools: recording
@@ -36,14 +36,14 @@ The trigger is what you learned, not whether a node exists. There is always a ho
 - \`upsert_node(name, ...)\` - create or update a node. Pass each field as a top-level arg (summary, covers, entry_points, last_commit, metadata, type), the same shape as a node in \`batch\`. Do NOT wrap them in a \`fields\` object. Only provided fields change on update; metadata shallow-merges.
 - \`link(from, to, type, reason)\` - create edge. Types: depends_on, extends, related_to, mirrors. related_to and mirrors are bidirectional.
 - \`batch({nodes, edges, observations})\` - bulk create/update in one transaction.
-- \`project_write(category, subject, content)\` - repo-specific conventions, decisions, preferences.
+- \`project_write(category, subject, content, repo?)\` - repo-specific conventions, decisions, preferences.
 - \`global_write(category, subject, content)\` - cross-repo user preferences.
 
 ### Tools: cleanup
 - \`remove_observation(node, id)\` - delete a wrong or outdated observation (id from read response).
 - \`unlink(from, to, type?)\` - remove an edge. Omit type to remove all edges between the pair.
 - \`delete_node(name)\` - remove a node and all its edges and observations.
-- \`project_delete(category, subject)\` - remove a project fact.
+- \`project_delete(category, subject, repo?)\` - remove a project fact.
 - \`global_delete(category, subject)\` - remove a global fact.
 
 ### Red flags (you are rationalizing if you think these)

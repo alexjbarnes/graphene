@@ -10,8 +10,12 @@ export interface TestRepo {
   writeFile: (name: string, content: string) => void;
 }
 
-export function createTestGitRepo(): TestRepo {
-  const path = mkdtempSync(join(tmpdir(), "graphene-test-"));
+// With no args, creates a repo at a fresh random temp path (as before). Pass
+// parentDir+name to place the repo at a chosen path instead, e.g. to build a
+// parent directory containing several child repos for multi-repo tests.
+export function createTestGitRepo(parentDir?: string, name?: string): TestRepo {
+  const path = parentDir ? join(parentDir, name ?? "repo") : mkdtempSync(join(tmpdir(), "graphene-test-"));
+  if (parentDir) mkdirSync(path, { recursive: true });
   execSync("git init", { cwd: path, stdio: "ignore" });
   execSync("git config user.email test@test.com", { cwd: path, stdio: "ignore" });
   execSync("git config user.name Test", { cwd: path, stdio: "ignore" });

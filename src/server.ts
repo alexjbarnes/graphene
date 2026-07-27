@@ -1,3 +1,6 @@
+import { randomBytes } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import {
   CallToolRequestSchema,
@@ -6,7 +9,7 @@ import {
 import { stripGrapheneBlock } from "./claude-md.js";
 import { handleRead } from "./tools/read.js";
 import { handleSearch } from "./tools/search.js";
-import { handleUpsertNode } from "./tools/upsert-node.js";
+import { handleUpsertNode, normalizeArgs } from "./tools/upsert-node.js";
 import { handleLearn } from "./tools/learn.js";
 import { handleLink } from "./tools/link.js";
 import { handleUnlink } from "./tools/unlink.js";
@@ -20,10 +23,20 @@ import { handleProjectRead } from "./tools/project-read.js";
 import { handleProjectWrite } from "./tools/project-write.js";
 import { handleProjectDelete } from "./tools/project-delete.js";
 import { handleBatch } from "./tools/batch.js";
-import { handleStatus } from "./tools/status.js";
+import { handleStatus, boundedKeys } from "./tools/status.js";
+import { listFacts } from "./store.js";
+import type { IndexEntry, NodeDetail, SearchResult } from "./types.js";
+import {
+  type RepoScope,
+  parseNodeRef,
+  resolveNodeRef,
+  resolveUpsertRef,
+  resolveWriteTarget,
+  rewriteRepoRelative,
+} from "./scope.js";
 
 export interface ServerContext {
-  repoRoot: string | null;
+  scopes: RepoScope[];
   globalDir: string;
 }
 
@@ -42,13 +55,13 @@ const TOOLS = [
   {
     name: "read",
     description:
-      "Read the context graph. No arguments returns the full index (all node names, types, summaries). With a name argument, returns the full node including outgoing edges, incoming dependents with neighbor summaries, and observations.",
+      "Read the context graph. No arguments returns the full index (all node names, types, summaries). With a name argument, returns the full node including outgoing edges, incoming dependents with neighbor summaries, and observations. In multi-repo sessions, index and node results include a repo field, and name accepts repo:name to disambiguate.",
     inputSchema: {
       type: "object" as const,
       properties: {
         name: {
           type: "string",
-          description: "Node name to read. Omit for the full index.",
+          description: "Node name to read. Omit for the full index. Accepts repo:name in multi-repo sessions.",
         },
       },
     },
@@ -69,11 +82,11 @@ const TOOLS = [
   {
     name: "upsert_node",
     description:
-      "Create a new node or merge-update an existing one. Only provided fields are changed on update. Metadata is shallow-merged.",
+      "Create a new node or merge-update an existing one. Only provided fields are changed on update. Metadata is shallow-merged. In multi-repo sessions, name accepts repo:name to target a specific repo; a bare name updates the existing node if exactly one repo has it, otherwise the repo is inferred from covers/entry_points paths.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        name: { type: "string", description: "Node identifier (slug)" },
+        name: { type: "string", description: "Node identifier (slug). Accepts repo:name in multi-repo sessions." },
         type: {
           type: "string",
           description:
@@ -112,7 +125,7 @@ const TOOLS = [
       properties: {
         node_name: {
           type: "string",
-          description: "Node to attach the observation to",
+          description: "Node to attach the observation to. Accepts repo:name in multi-repo sessions.",
         },
         content: { type: "string", description: "The learned observation" },
         source: {
@@ -126,7 +139,7 @@ const TOOLS = [
   {
     name: "link",
     description:
-      "Create an edge between two nodes. Bidirectional types (related_to, mirrors) automatically create edges in both directions. Idempotent: re-linking updates the reason.",
+      "Create an edge between two nodes. Bidirectional types (related_to, mirrors) automatically create edges in both directions. Idempotent: re-linking updates the reason. Names accept repo:name in multi-repo sessions; from and to must resolve to the same repo (cross-repo edges are not supported).",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -148,7 +161,7 @@ const TOOLS = [
   {
     name: "unlink",
     description:
-      "Remove an edge between two nodes. Without type, removes all edges between them.",
+      "Remove an edge between two nodes. Without type, removes all edges between them. Names accept repo:name in multi-repo sessions.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -219,25 +232,35 @@ const TOOLS = [
   {
     name: "project_read",
     description:
-      "Read repo-scoped facts (conventions, context, decisions specific to this project). No arguments returns all project facts.",
+      "Read repo-scoped facts (conventions, context, decisions specific to this project). No arguments returns all project facts. In multi-repo sessions, repo is required.",
     inputSchema: {
       type: "object" as const,
       properties: {
         category: { type: "string", description: "Filter by category" },
         subject: { type: "string", description: "Filter by subject" },
+        repo: {
+          type: "string",
+          description:
+            "Repo name. Optional in single-repo sessions (must match if given); required in multi-repo sessions.",
+        },
       },
     },
   },
   {
     name: "project_write",
     description:
-      "Write a repo-scoped fact. One fact per category+subject pair; writing to an existing pair replaces the content. Use for project-specific conventions, decisions, and context that don't belong on a node.",
+      "Write a repo-scoped fact. One fact per category+subject pair; writing to an existing pair replaces the content. Use for project-specific conventions, decisions, and context that don't belong on a node. In multi-repo sessions, repo is required.",
     inputSchema: {
       type: "object" as const,
       properties: {
         category: { type: "string", description: "Fact category" },
         subject: { type: "string", description: "Fact subject" },
         content: { type: "string", description: "Fact content" },
+        repo: {
+          type: "string",
+          description:
+            "Repo name. Optional in single-repo sessions (must match if given); required in multi-repo sessions.",
+        },
       },
       required: ["category", "subject", "content"],
     },
@@ -245,12 +268,17 @@ const TOOLS = [
   {
     name: "project_delete",
     description:
-      "Remove a repo-scoped fact by category and subject.",
+      "Remove a repo-scoped fact by category and subject. In multi-repo sessions, repo is required.",
     inputSchema: {
       type: "object" as const,
       properties: {
         category: { type: "string", description: "Fact category" },
         subject: { type: "string", description: "Fact subject" },
+        repo: {
+          type: "string",
+          description:
+            "Repo name. Optional in single-repo sessions (must match if given); required in multi-repo sessions.",
+        },
       },
       required: ["category", "subject"],
     },
@@ -264,7 +292,7 @@ const TOOLS = [
       properties: {
         node_name: {
           type: "string",
-          description: "Node the observation belongs to",
+          description: "Node the observation belongs to. Accepts repo:name in multi-repo sessions.",
         },
         id: {
           type: "string",
@@ -281,7 +309,7 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        name: { type: "string", description: "Node name to delete" },
+        name: { type: "string", description: "Node name to delete. Accepts repo:name in multi-repo sessions." },
       },
       required: ["name"],
     },
@@ -365,8 +393,9 @@ export function createServer(ctx: ServerContext): Server {
   server.oninitialized = () => {
     // Migration: earlier versions wrote the rules into the repo's CLAUDE.md.
     // The rules now come from the SessionStart hook, so strip any committed
-    // block. No-op once stripped.
-    if (ctx.repoRoot) stripGrapheneBlock(ctx.repoRoot);
+    // block. No-op once stripped. Only meaningful for a single unambiguous
+    // repo root; skipped entirely outside a repo or across multiple scopes.
+    if (ctx.scopes.length === 1) stripGrapheneBlock(ctx.scopes[0].root);
   };
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -388,18 +417,71 @@ export function createServer(ctx: ServerContext): Server {
   return server;
 }
 
-function requireRepo(ctx: ServerContext): { repoRoot: string } {
-  if (!ctx.repoRoot) {
+function requireScopes(ctx: ServerContext): RepoScope[] {
+  if (ctx.scopes.length === 0) {
     throw new Error("Not in a git repository. Repo-specific tools are unavailable.");
   }
-  return { repoRoot: ctx.repoRoot };
+  return ctx.scopes;
 }
 
-function dispatch(
-  ctx: ServerContext,
-  tool: string,
-  args: Record<string, unknown>
-): unknown {
+// A path guaranteed not to exist on disk. listNodes/listFacts treat a
+// missing directory as an empty store, so this suppresses a store (globals
+// in a per-scope call, or the repo side of the globals-only call) with zero
+// filesystem IO -- no temp directory is ever created or needs cleanup.
+function emptyStoreDir(): string {
+  return join(tmpdir(), `graphene-empty-${randomBytes(8).toString("hex")}`);
+}
+
+function scopeNames(scopes: RepoScope[]): string {
+  return scopes.map((s) => s.name).join(", ");
+}
+
+// project_read/project_write/project_delete take an optional `repo` arg in
+// every session shape: in a single-repo session it must match the session's
+// repo if given at all; in a multi-repo session it is required and selects
+// the scope.
+function resolveProjectRoot(tool: string, scopes: RepoScope[], args: Record<string, unknown>): string {
+  const repo = args.repo as string | undefined;
+
+  if (scopes.length === 1) {
+    if (repo !== undefined && repo !== scopes[0].name) {
+      throw new Error(`${tool}: repo "${repo}" does not match this session's repo "${scopes[0].name}".`);
+    }
+    return scopes[0].root;
+  }
+
+  if (repo === undefined) {
+    throw new Error(
+      `${tool} requires a "repo" argument in a multi-repo session. In scope: ${scopeNames(scopes)}.`
+    );
+  }
+  const scope = scopes.find((s) => s.name === repo);
+  if (!scope) {
+    throw new Error(`Unknown repo "${repo}" for ${tool}. In scope: ${scopeNames(scopes)}.`);
+  }
+  return scope.root;
+}
+
+// link/unlink (and batch edges) require both endpoints to resolve to the
+// same repo: edges are not allowed to cross scopes, since scope names are
+// session-relative and must never be written into a committed node file.
+function checkSameScope(
+  fromRef: string,
+  toRef: string,
+  scopes: RepoScope[]
+): { scope: RepoScope; from: string; to: string } {
+  const fromR = resolveNodeRef(fromRef, scopes);
+  const toR = resolveNodeRef(toRef, scopes);
+  if (fromR.scope.root !== toR.scope.root) {
+    throw new Error(
+      `Cross-repo edges are not supported: "${fromRef}" is in ${fromR.scope.name}, ` +
+        `"${toRef}" is in ${toR.scope.name}.`
+    );
+  }
+  return { scope: fromR.scope, from: fromR.name, to: toR.name };
+}
+
+export function dispatch(ctx: ServerContext, tool: string, args: Record<string, unknown>): unknown {
   switch (tool) {
     case "global_read":
       return handleGlobalRead(ctx.globalDir, args);
@@ -407,40 +489,358 @@ function dispatch(
       return handleGlobalWrite(ctx.globalDir, args);
     case "global_delete":
       return handleGlobalDelete(ctx.globalDir, args);
+    // project_* take the same optional `repo` arg regardless of how many
+    // scopes are in play, so they are resolved uniformly here rather than
+    // split across the single/multi dispatch below.
+    case "project_read":
+      return handleProjectRead(resolveProjectRoot("project_read", requireScopes(ctx), args), args);
+    case "project_write":
+      return handleProjectWrite(resolveProjectRoot("project_write", requireScopes(ctx), args), args);
+    case "project_delete":
+      return handleProjectDelete(resolveProjectRoot("project_delete", requireScopes(ctx), args), args);
     default: {
-      const { repoRoot } = requireRepo(ctx);
-      switch (tool) {
-        case "status":
-          return handleStatus(repoRoot, ctx.globalDir, args);
-        case "read":
-          return handleRead(repoRoot, args);
-        case "search":
-          return handleSearch(repoRoot, ctx.globalDir, args);
-        case "upsert_node":
-          return handleUpsertNode(repoRoot, args);
-        case "learn":
-          return handleLearn(repoRoot, args);
-        case "link":
-          return handleLink(repoRoot, args);
-        case "unlink":
-          return handleUnlink(repoRoot, args);
-        case "stale":
-          return handleStale(repoRoot, args);
-        case "remove_observation":
-          return handleRemoveObservation(repoRoot, args);
-        case "delete_node":
-          return handleDeleteNode(repoRoot, args);
-        case "batch":
-          return handleBatch(repoRoot, args);
-        case "project_read":
-          return handleProjectRead(repoRoot, args);
-        case "project_write":
-          return handleProjectWrite(repoRoot, args);
-        case "project_delete":
-          return handleProjectDelete(repoRoot, args);
-        default:
-          throw new Error(`Unknown tool: ${tool}`);
-      }
+      const scopes = requireScopes(ctx);
+      if (scopes.length === 1) return dispatchSingle(scopes[0].root, ctx.globalDir, tool, args);
+      return dispatchMulti(scopes, ctx.globalDir, tool, args);
     }
   }
+}
+
+// Byte-compat path: identical to tool dispatch before multi-repo support,
+// so a single-repo session behaves exactly as it did before this feature.
+function dispatchSingle(
+  repoRoot: string,
+  globalDir: string,
+  tool: string,
+  args: Record<string, unknown>
+): unknown {
+  switch (tool) {
+    case "status":
+      return handleStatus(repoRoot, globalDir, args);
+    case "read":
+      return handleRead(repoRoot, args);
+    case "search":
+      return handleSearch(repoRoot, globalDir, args);
+    case "upsert_node":
+      return handleUpsertNode(repoRoot, args);
+    case "learn":
+      return handleLearn(repoRoot, args);
+    case "link":
+      return handleLink(repoRoot, args);
+    case "unlink":
+      return handleUnlink(repoRoot, args);
+    case "stale":
+      return handleStale(repoRoot, args);
+    case "remove_observation":
+      return handleRemoveObservation(repoRoot, args);
+    case "delete_node":
+      return handleDeleteNode(repoRoot, args);
+    case "batch":
+      return handleBatch(repoRoot, args);
+    default:
+      throw new Error(`Unknown tool: ${tool}`);
+  }
+}
+
+function dispatchMulti(
+  scopes: RepoScope[],
+  globalDir: string,
+  tool: string,
+  args: Record<string, unknown>
+): unknown {
+  switch (tool) {
+    case "status":
+      return routeStatus(scopes, globalDir);
+    case "read":
+      return routeRead(scopes, args);
+    case "search":
+      return routeSearch(scopes, globalDir, args);
+    case "upsert_node":
+      return routeUpsertNode(scopes, args);
+    case "learn":
+      return routeLearn(scopes, args);
+    case "link":
+      return routeLink(scopes, args);
+    case "unlink":
+      return routeUnlink(scopes, args);
+    case "stale":
+      return routeStale(scopes);
+    case "remove_observation":
+      return routeRemoveObservation(scopes, args);
+    case "delete_node":
+      return routeDeleteNode(scopes, args);
+    case "batch":
+      return routeBatch(scopes, args);
+    default:
+      throw new Error(`Unknown tool: ${tool}`);
+  }
+}
+
+function routeStatus(scopes: RepoScope[], globalDir: string): unknown {
+  const emptyDir = emptyStoreDir();
+  // One broken scope (e.g. a freshly `git init`ed sibling with no commits,
+  // where getHead throws) must degrade to an error entry for that repo, not
+  // take down status for the whole session.
+  const repos = scopes.map((scope) => {
+    try {
+      const { global_facts, ...rest } = handleStatus(scope.root, emptyDir, {});
+      return { repo: scope.name, ...rest };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { repo: scope.name, error: message };
+    }
+  });
+  // Computed once directly, with the same capping handleStatus itself uses,
+  // rather than once per scope: otherwise global facts would be counted
+  // once per repo instead of once per session.
+  const globalFacts = listFacts(globalDir);
+  return {
+    repos,
+    global_facts: {
+      count: globalFacts.length,
+      keys: boundedKeys(globalFacts.map((f) => `${f.category}/${f.subject}`)),
+    },
+  };
+}
+
+function routeStale(scopes: RepoScope[]): unknown {
+  const repos = scopes.map((scope) => {
+    try {
+      return { repo: scope.name, ...handleStale(scope.root, {}) };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { repo: scope.name, error: message };
+    }
+  });
+  return { repos };
+}
+
+function routeRead(scopes: RepoScope[], args: Record<string, unknown>): unknown {
+  const name = args.name as string | undefined;
+
+  if (!name) {
+    const nodes = scopes.flatMap((scope) => {
+      const result = handleRead(scope.root, {}) as { nodes: IndexEntry[] };
+      return result.nodes.map((n) => ({ repo: scope.name, ...n }));
+    });
+    nodes.sort((a, b) => {
+      if (a.repo !== b.repo) return a.repo < b.repo ? -1 : 1;
+      return a.name < b.name ? -1 : a.name > b.name ? 1 : 0;
+    });
+    return { nodes };
+  }
+
+  const resolved = resolveNodeRef(name, scopes);
+  const result = handleRead(resolved.scope.root, { ...args, name: resolved.name }) as NodeDetail;
+  return { repo: resolved.scope.name, ...result };
+}
+
+function routeSearch(scopes: RepoScope[], globalDir: string, args: Record<string, unknown>): unknown {
+  const emptyDir = emptyStoreDir();
+  let omitted = 0;
+  const merged: Array<SearchResult & { repo?: string }> = [];
+
+  for (const scope of scopes) {
+    const res = handleSearch(scope.root, emptyDir, args);
+    omitted += res.omitted ?? 0;
+    for (const r of res.results) merged.push({ ...r, repo: scope.name });
+  }
+
+  // One extra call for globals: repoRoot is the empty (nonexistent)
+  // directory, so only global facts can possibly match, and they are never
+  // tagged with a repo.
+  const globalRes = handleSearch(emptyDir, globalDir, args);
+  omitted += globalRes.omitted ?? 0;
+  for (const r of globalRes.results) merged.push({ ...r });
+
+  merged.sort((a, b) => b.score - a.score);
+  const mergeDrops = Math.max(0, merged.length - 20);
+  const bounded = merged.slice(0, 20);
+  const total = omitted + mergeDrops;
+
+  return total > 0 ? { results: bounded, omitted: total } : { results: bounded };
+}
+
+function routeLearn(scopes: RepoScope[], args: Record<string, unknown>): unknown {
+  const nodeName = args.node_name as string;
+  if (!nodeName) throw new Error("node_name is required");
+  const { scope, name } = resolveNodeRef(nodeName, scopes);
+  return handleLearn(scope.root, { ...args, node_name: name });
+}
+
+function routeRemoveObservation(scopes: RepoScope[], args: Record<string, unknown>): unknown {
+  const nodeName = args.node_name as string;
+  if (!nodeName) throw new Error("node_name is required");
+  const { scope, name } = resolveNodeRef(nodeName, scopes);
+  return handleRemoveObservation(scope.root, { ...args, node_name: name });
+}
+
+function routeDeleteNode(scopes: RepoScope[], args: Record<string, unknown>): unknown {
+  const name = args.name as string;
+  if (!name) throw new Error("name is required");
+  const resolved = resolveNodeRef(name, scopes);
+  return handleDeleteNode(resolved.scope.root, { ...args, name: resolved.name });
+}
+
+function routeLink(scopes: RepoScope[], args: Record<string, unknown>): unknown {
+  const from = args.from as string;
+  const to = args.to as string;
+  const type = args.type as string;
+  if (!from || !to || !type) throw new Error("from, to, and type are required");
+  const resolved = checkSameScope(from, to, scopes);
+  return handleLink(resolved.scope.root, { ...args, from: resolved.from, to: resolved.to });
+}
+
+function routeUnlink(scopes: RepoScope[], args: Record<string, unknown>): unknown {
+  const from = args.from as string;
+  const to = args.to as string;
+  if (!from || !to) throw new Error("from and to are required");
+  const resolved = checkSameScope(from, to, scopes);
+  return handleUnlink(resolved.scope.root, { ...args, from: resolved.from, to: resolved.to });
+}
+
+function routeUpsertNode(scopes: RepoScope[], args: Record<string, unknown>): unknown {
+  const normalized = normalizeArgs(args);
+  const rawName = normalized.name as string;
+  if (!rawName) throw new Error("name is required");
+
+  const routed = resolveUpsertRef(rawName, scopes);
+  if ("scope" in routed) {
+    return handleUpsertNode(routed.scope.root, { ...normalized, name: routed.name });
+  }
+
+  const cwd = process.cwd();
+  const covers = Array.isArray(normalized.covers) ? (normalized.covers as string[]) : [];
+  const entryPoints = Array.isArray(normalized.entry_points) ? (normalized.entry_points as string[]) : [];
+  const scope = resolveWriteTarget(scopes, routed.name, cwd, [...covers, ...entryPoints]);
+
+  const rewritten: Record<string, unknown> = { ...normalized, name: routed.name };
+  if (covers.length > 0) rewritten.covers = rewriteRepoRelative(scope, cwd, covers);
+  if (entryPoints.length > 0) rewritten.entry_points = rewriteRepoRelative(scope, cwd, entryPoints);
+
+  return handleUpsertNode(scope.root, rewritten);
+}
+
+const BATCH_KEYS = new Set(["nodes", "edges", "observations"]);
+
+interface BatchBucket {
+  nodes: Array<Record<string, unknown>>;
+  edges: Array<Record<string, unknown>>;
+  observations: Array<Record<string, unknown>>;
+}
+
+// Resolves every node/edge/observation in the batch to a scope up front
+// (nothing is written until every item resolves cleanly), then runs the
+// existing per-repo handleBatch once per scope. Node creates placed earlier
+// in this same batch are visible to later edges/observations that reference
+// them by bare name, even though nothing has hit disk yet.
+function routeBatch(scopes: RepoScope[], args: Record<string, unknown>): unknown {
+  const unknownKeys = Object.keys(args).filter((k) => !BATCH_KEYS.has(k));
+  if (unknownKeys.length > 0) {
+    throw new Error(
+      `Unknown keys: ${unknownKeys.join(", ")}. batch accepts three top-level arrays: nodes, edges, observations.`
+    );
+  }
+
+  const params = args as {
+    nodes?: Array<Record<string, unknown>>;
+    edges?: Array<Record<string, unknown>>;
+    observations?: Array<Record<string, unknown>>;
+  };
+  if (!params.nodes?.length && !params.edges?.length && !params.observations?.length) {
+    throw new Error("batch requires at least one non-empty array: nodes, edges, or observations.");
+  }
+
+  const cwd = process.cwd();
+  const placed = new Map<string, RepoScope>();
+  const byScope = new Map<RepoScope, BatchBucket>();
+
+  function bucket(scope: RepoScope): BatchBucket {
+    let b = byScope.get(scope);
+    if (!b) {
+      b = { nodes: [], edges: [], observations: [] };
+      byScope.set(scope, b);
+    }
+    return b;
+  }
+
+  function resolveItemRef(ref: string): { scope: RepoScope; name: string } {
+    const parsed = parseNodeRef(ref, scopes);
+    if ("scope" in parsed) return parsed;
+    const placedScope = placed.get(parsed.name);
+    if (placedScope) return { scope: placedScope, name: parsed.name };
+    return resolveNodeRef(ref, scopes);
+  }
+
+  for (const rawNode of params.nodes ?? []) {
+    const node = normalizeArgs(rawNode);
+    const rawName = node.name as string;
+    if (!rawName) throw new Error("name is required");
+
+    // A bare name already placed earlier in this same batch (e.g. two node
+    // entries folding onto the same node, as handleBatch's own in-memory
+    // working set does within one repo) must land in that same scope rather
+    // than being independently re-resolved -- resolveUpsertRef alone only
+    // ever sees disk, so it cannot know about a same-batch, not-yet-written
+    // placement.
+    const parsed = parseNodeRef(rawName, scopes);
+    let scope: RepoScope;
+    if ("scope" in parsed) {
+      scope = parsed.scope;
+    } else if (placed.has(parsed.name)) {
+      scope = placed.get(parsed.name)!;
+    } else {
+      const routed = resolveUpsertRef(rawName, scopes);
+      if ("scope" in routed) {
+        scope = routed.scope;
+      } else {
+        const covers = Array.isArray(node.covers) ? (node.covers as string[]) : [];
+        const entryPoints = Array.isArray(node.entry_points) ? (node.entry_points as string[]) : [];
+        scope = resolveWriteTarget(scopes, routed.name, cwd, [...covers, ...entryPoints]);
+        if (covers.length > 0) node.covers = rewriteRepoRelative(scope, cwd, covers);
+        if (entryPoints.length > 0) node.entry_points = rewriteRepoRelative(scope, cwd, entryPoints);
+      }
+    }
+
+    placed.set(parsed.name, scope);
+    bucket(scope).nodes.push({ ...node, name: parsed.name });
+  }
+
+  for (const edge of params.edges ?? []) {
+    const from = edge.from as string;
+    const to = edge.to as string;
+    if (!from || !to) throw new Error("from, to, and type are required");
+
+    const fromR = resolveItemRef(from);
+    const toR = resolveItemRef(to);
+    if (fromR.scope.root !== toR.scope.root) {
+      throw new Error(
+        `Cross-repo edges are not supported: "${from}" is in ${fromR.scope.name}, ` +
+          `"${to}" is in ${toR.scope.name}.`
+      );
+    }
+    bucket(fromR.scope).edges.push({ ...edge, from: fromR.name, to: toR.name });
+  }
+
+  for (const obs of params.observations ?? []) {
+    const nodeName = obs.node_name as string;
+    if (!nodeName) throw new Error("node_name is required");
+
+    const r = resolveItemRef(nodeName);
+    bucket(r.scope).observations.push({ ...obs, node_name: r.name });
+  }
+
+  const combined = { nodes_created: 0, nodes_updated: 0, edges_created: 0, observations_added: 0 };
+  for (const [scope, items] of byScope) {
+    const result = handleBatch(scope.root, {
+      ...(items.nodes.length > 0 ? { nodes: items.nodes } : {}),
+      ...(items.edges.length > 0 ? { edges: items.edges } : {}),
+      ...(items.observations.length > 0 ? { observations: items.observations } : {}),
+    });
+    combined.nodes_created += result.nodes_created;
+    combined.nodes_updated += result.nodes_updated;
+    combined.edges_created += result.edges_created;
+    combined.observations_added += result.observations_added;
+  }
+  return combined;
 }

@@ -16,5 +16,6 @@ interface StatusResult {
     project_facts: FactSummary;
     global_facts: FactSummary;
 }
+export declare function boundedKeys(keys: string[]): string[];
 export declare function handleStatus(repoRoot: string, globalDirPath: string, _args: Record<string, unknown>): StatusResult;
 export {};
