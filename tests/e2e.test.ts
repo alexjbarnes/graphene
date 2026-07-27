@@ -6,9 +6,13 @@
 // in disposable directories.
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 import { execSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+// Normal top-level import: this test file always runs on Node 24. Only
+// src/migrate.ts needs the lazy require, so graphene itself keeps working on
+// older Node when there is nothing to migrate.
+import { DatabaseSync } from "node:sqlite";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -260,4 +264,100 @@ describe("e2e: multi-repo session over MCP stdio", () => {
     expect(node.observations[0].id).toBe(learned.id);
     expect(node.observations[0].content).toBe("Uses JWT, not sessions");
   });
+});
+
+// Covers the v0.11 startup migration end to end: a legacy sql.js context.db
+// seeded before the server ever starts must be migrated in place (server.ts
+// itself never sees the legacy db -- index.ts migrates every scope before
+// createServer is called), leaving the graph readable through the normal
+// file-store `read` tool and the legacy db renamed out of the way.
+describe("e2e: legacy db migration on startup", () => {
+  it("migrates a seeded legacy context.db before serving, renaming it to context.db.migrated", async () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), "graphene-e2e-migrate-repo-"));
+    const home = mkdtempSync(join(tmpdir(), "graphene-e2e-migrate-home-"));
+    execSync("git init", { cwd: repoRoot, stdio: "ignore" });
+    execSync("git config user.email test@test.com", { cwd: repoRoot, stdio: "ignore" });
+    execSync("git config user.name Test", { cwd: repoRoot, stdio: "ignore" });
+    execSync("git commit --allow-empty -m init", { cwd: repoRoot, stdio: "ignore" });
+
+    const grapheneDirPath = join(repoRoot, ".graphene");
+    mkdirSync(grapheneDirPath, { recursive: true });
+    const dbPath = join(grapheneDirPath, "context.db");
+    const legacyDb = new DatabaseSync(dbPath);
+    legacyDb.exec(`
+      CREATE TABLE nodes (
+        name TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        summary TEXT,
+        entry_points TEXT DEFAULT '[]',
+        covers TEXT DEFAULT '[]',
+        last_commit TEXT,
+        metadata TEXT DEFAULT '{}',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE edges (
+        from_node TEXT NOT NULL REFERENCES nodes(name) ON DELETE CASCADE,
+        to_node TEXT NOT NULL REFERENCES nodes(name) ON DELETE CASCADE,
+        type TEXT NOT NULL,
+        reason TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        PRIMARY KEY (from_node, to_node, type)
+      );
+      CREATE TABLE observations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        node_name TEXT NOT NULL REFERENCES nodes(name) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        source TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+      );
+      CREATE TABLE project_facts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        category TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now')),
+        UNIQUE(category, subject)
+      );
+    `);
+    legacyDb
+      .prepare("INSERT INTO nodes (name, type, summary) VALUES (?, ?, ?)")
+      .run("auth", "subsystem", "Legacy auth node");
+    legacyDb
+      .prepare("INSERT INTO observations (node_name, content, source) VALUES (?, ?, ?)")
+      .run("auth", "Uses JWT", "legacy");
+    legacyDb.close();
+
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [DIST_INDEX],
+      cwd: repoRoot,
+      env: { ...process.env, HOME: home },
+    });
+    const client = new Client({ name: "graphene-e2e-migrate-test", version: "0.0.1" });
+
+    try {
+      await client.connect(transport);
+
+      const readResult = await client.callTool({ name: "read", arguments: { name: "auth" } });
+      const node = parseResult<{
+        name: string;
+        summary: string;
+        observations: Array<{ content: string; source: string | null }>;
+      }>(readResult as CallToolResult);
+      expect(node.name).toBe("auth");
+      expect(node.summary).toBe("Legacy auth node");
+      expect(node.observations).toHaveLength(1);
+      expect(node.observations[0].content).toBe("Uses JWT");
+      expect(node.observations[0].source).toBe("legacy");
+
+      expect(existsSync(dbPath)).toBe(false);
+      expect(existsSync(`${dbPath}.migrated`)).toBe(true);
+    } finally {
+      await client.close();
+      rmSync(repoRoot, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 20000);
 });
