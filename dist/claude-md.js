@@ -38,7 +38,7 @@ The trigger is what you learned, not whether a node exists. There is always a ho
 - \`global_write(category, subject, content)\` - cross-repo user preferences.
 
 ### Tools: cleanup
-- \`remove_observation(id)\` - delete a wrong or outdated observation (ID from read response).
+- \`remove_observation(node, id)\` - delete a wrong or outdated observation (id from read response).
 - \`unlink(from, to, type?)\` - remove an edge. Omit type to remove all edges between the pair.
 - \`delete_node(name)\` - remove a node and all its edges and observations.
 - \`project_delete(category, subject)\` - remove a project fact.

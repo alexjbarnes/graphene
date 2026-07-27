@@ -1,40 +1,15 @@
-import type { GrapheneDatabase } from "../db.js";
-
-interface ProjectFact {
-  id: number;
-  category: string;
-  subject: string;
-  content: string;
-  created_at: string;
-  updated_at: string;
-}
+import { listFacts, factsDir, type StoredFact } from "../store.js";
 
 export function handleProjectRead(
-  db: GrapheneDatabase,
+  repoRoot: string,
   args: Record<string, unknown>
-): { facts: ProjectFact[] } {
+): { facts: StoredFact[] } {
   const category = args.category as string | undefined;
   const subject = args.subject as string | undefined;
 
-  let sql = "SELECT * FROM project_facts";
-  const conditions: string[] = [];
-  const params: string[] = [];
+  let facts = listFacts(factsDir(repoRoot));
+  if (category) facts = facts.filter((f) => f.category === category);
+  if (subject) facts = facts.filter((f) => f.subject === subject);
 
-  if (category) {
-    conditions.push("category = ?");
-    params.push(category);
-  }
-  if (subject) {
-    conditions.push("subject = ?");
-    params.push(subject);
-  }
-
-  if (conditions.length > 0) {
-    sql += " WHERE " + conditions.join(" AND ");
-  }
-
-  sql += " ORDER BY category, subject";
-
-  const facts = db.prepare(sql).all(...params) as unknown as ProjectFact[];
   return { facts };
 }

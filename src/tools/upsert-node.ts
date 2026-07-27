@@ -1,6 +1,6 @@
-import type { GrapheneDatabase } from "../db.js";
+import { readNode, writeNode, type StoredNode } from "../store.js";
 
-interface UpsertNodeParams {
+export interface UpsertNodeParams {
   name: string;
   type?: string;
   summary?: string;
@@ -58,7 +58,7 @@ function asArray(value: unknown, label: string): unknown[] {
 // flat schema would silently drop all of it and report nothing changed. Unwrap
 // and coerce so a well-meant write is never lost, and reject anything we still
 // do not recognize so the failure is loud, not silent.
-function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
+export function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
   let merged: Record<string, unknown> = { ...args };
 
   if ("fields" in merged && merged.fields !== undefined && merged.fields !== null) {
@@ -87,74 +87,60 @@ function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
   return merged;
 }
 
-export function handleUpsertNode(
-  db: GrapheneDatabase,
-  args: Record<string, unknown>
-): UpsertResult {
-  const params = normalizeArgs(args) as unknown as UpsertNodeParams;
-  if (!params.name) throw new Error("name is required");
-
-  const existing = db
-    .prepare("SELECT name, metadata FROM nodes WHERE name = ?")
-    .get(params.name) as { name: string; metadata: string } | undefined;
-
+// Pure core shared with batch.ts: given the node's current state (or null if
+// it does not exist yet) and normalized params, returns the StoredNode that
+// should be written. No disk IO, so batch can fold many of these in memory
+// before Phase B commits anything.
+export function applyUpsert(
+  existing: StoredNode | null,
+  params: UpsertNodeParams
+): { node: StoredNode; status: "created" | "updated"; fields_updated?: string[] } {
   if (!existing) {
     if (!params.type) throw new Error("type is required when creating a node");
 
-    db.prepare(
-      `INSERT INTO nodes (name, type, summary, entry_points, covers, last_commit, metadata)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(
-      params.name,
-      params.type,
-      params.summary ?? null,
-      JSON.stringify(params.entry_points ?? []),
-      JSON.stringify(params.covers ?? []),
-      params.last_commit ?? null,
-      JSON.stringify(params.metadata ?? {})
-    );
-
-    return { name: params.name, status: "created" };
+    const node: StoredNode = {
+      name: params.name,
+      type: params.type,
+      summary: params.summary ?? null,
+      entry_points: params.entry_points ?? [],
+      covers: params.covers ?? [],
+      last_commit: params.last_commit ?? null,
+      metadata: params.metadata ?? {},
+      edges: [],
+      observations: [],
+    };
+    return { node, status: "created" };
   }
 
-  const updates: string[] = [];
-  const values: unknown[] = [];
   const fieldsUpdated: string[] = [];
+  const node: StoredNode = { ...existing };
 
   if (params.type !== undefined) {
-    updates.push("type = ?");
-    values.push(params.type);
+    node.type = params.type;
     fieldsUpdated.push("type");
   }
   if (params.summary !== undefined) {
-    updates.push("summary = ?");
-    values.push(params.summary);
+    node.summary = params.summary;
     fieldsUpdated.push("summary");
   }
   if (params.entry_points !== undefined) {
-    updates.push("entry_points = ?");
-    values.push(JSON.stringify(params.entry_points));
+    node.entry_points = params.entry_points;
     fieldsUpdated.push("entry_points");
   }
   if (params.covers !== undefined) {
-    updates.push("covers = ?");
-    values.push(JSON.stringify(params.covers));
+    node.covers = params.covers;
     fieldsUpdated.push("covers");
   }
   if (params.last_commit !== undefined) {
-    updates.push("last_commit = ?");
-    values.push(params.last_commit);
+    node.last_commit = params.last_commit;
     fieldsUpdated.push("last_commit");
   }
   if (params.metadata !== undefined) {
-    const existingMeta = JSON.parse(existing.metadata || "{}");
-    const merged = { ...existingMeta, ...params.metadata };
-    updates.push("metadata = ?");
-    values.push(JSON.stringify(merged));
+    node.metadata = { ...existing.metadata, ...params.metadata };
     fieldsUpdated.push("metadata");
   }
 
-  if (updates.length === 0) {
+  if (fieldsUpdated.length === 0) {
     throw new Error(
       `upsert_node for existing node "${params.name}" provided no fields to update. ` +
         `Pass fields as top-level args (summary, covers, entry_points, last_commit, metadata, type), ` +
@@ -162,11 +148,22 @@ export function handleUpsertNode(
     );
   }
 
-  updates.push("updated_at = datetime('now')");
-  values.push(params.name);
-  db.prepare(`UPDATE nodes SET ${updates.join(", ")} WHERE name = ?`).run(
-    ...values
-  );
+  return { node, status: "updated", fields_updated: fieldsUpdated };
+}
 
-  return { name: params.name, status: "updated", fields_updated: fieldsUpdated };
+export function handleUpsertNode(
+  repoRoot: string,
+  args: Record<string, unknown>
+): UpsertResult {
+  const params = normalizeArgs(args) as unknown as UpsertNodeParams;
+  if (!params.name) throw new Error("name is required");
+
+  const existing = readNode(repoRoot, params.name);
+  const applied = applyUpsert(existing, params);
+  writeNode(repoRoot, applied.node);
+
+  if (applied.status === "created") {
+    return { name: params.name, status: "created" };
+  }
+  return { name: params.name, status: "updated", fields_updated: applied.fields_updated! };
 }

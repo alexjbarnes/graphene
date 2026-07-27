@@ -1,12 +1,20 @@
-import type { GrapheneDatabase } from "../db.js";
-import type { IndexEntry, Fact, StaleNode } from "../types.js";
+import type { StaleNode } from "../types.js";
+interface NodeSummary {
+    name: string;
+    type: string;
+    summary: string | null;
+    observation_count: number;
+}
+interface FactSummary {
+    count: number;
+    keys: string[];
+}
 interface StatusResult {
     head: string;
-    nodes: IndexEntry[];
+    nodes: NodeSummary[];
     stale_nodes: StaleNode[];
-    project_facts: Fact[];
-    global_facts: Fact[];
-    observations_by_node: Record<string, string[]>;
+    project_facts: FactSummary;
+    global_facts: FactSummary;
 }
-export declare function handleStatus(repoDB: GrapheneDatabase, globalDB: GrapheneDatabase, repoRoot: string, _args: Record<string, unknown>): StatusResult;
+export declare function handleStatus(repoRoot: string, globalDirPath: string, _args: Record<string, unknown>): StatusResult;
 export {};

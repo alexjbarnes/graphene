@@ -1,21 +1,22 @@
+import { listNodes, readNode } from "../store.js";
 import { getChangedFiles } from "../git.js";
-export function handleStale(db, repoRoot, _args) {
-    const nodes = db
-        .prepare("SELECT name, covers, last_commit FROM nodes")
-        .all();
+export function handleStale(repoRoot, _args) {
+    const names = listNodes(repoRoot);
     const staleNodes = [];
     let freshCount = 0;
-    for (const node of nodes) {
-        const covers = JSON.parse(node.covers || "[]");
+    for (const name of names) {
+        const node = readNode(repoRoot, name);
+        if (!node)
+            continue;
         if (!node.last_commit) {
             staleNodes.push({ name: node.name, reason: "untracked", changed_files: [] });
             continue;
         }
-        if (covers.length === 0) {
+        if (node.covers.length === 0) {
             freshCount++;
             continue;
         }
-        const changed = getChangedFiles(repoRoot, node.last_commit, covers);
+        const changed = getChangedFiles(repoRoot, node.last_commit, node.covers);
         if (changed.length > 0) {
             staleNodes.push({ name: node.name, reason: "changed", changed_files: changed });
         }
@@ -26,7 +27,7 @@ export function handleStale(db, repoRoot, _args) {
     return {
         stale_nodes: staleNodes,
         fresh_count: freshCount,
-        total_count: nodes.length,
+        total_count: names.length,
     };
 }
 //# sourceMappingURL=stale.js.map

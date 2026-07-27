@@ -1,16 +1,24 @@
-import type { GrapheneDatabase } from "../db.js";
+import { readNode, writeNode } from "../store.js";
 
 export function handleRemoveObservation(
-  db: GrapheneDatabase,
+  repoRoot: string,
   args: Record<string, unknown>
 ): { removed: boolean } {
-  const id = args.id as number | undefined;
+  const nodeName = args.node_name as string;
+  const id = args.id as string;
 
-  if (id === undefined) throw new Error("id is required");
+  if (!nodeName) throw new Error("node_name is required");
+  if (!id) throw new Error("id is required");
 
-  const result = db
-    .prepare("DELETE FROM observations WHERE id = ?")
-    .run(id);
+  const node = readNode(repoRoot, nodeName);
+  if (!node) throw new Error(`Node not found: ${nodeName}`);
 
-  return { removed: result.changes > 0 };
+  const observations = node.observations.filter((o) => o.id !== id);
+  const removed = observations.length !== node.observations.length;
+
+  if (removed) {
+    writeNode(repoRoot, { ...node, observations });
+  }
+
+  return { removed };
 }

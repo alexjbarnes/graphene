@@ -1,50 +1,52 @@
+import { listNodes, readNode, listFacts, factsDir } from "../store.js";
 import { getChangedFiles, getHead } from "../git.js";
-export function handleStatus(repoDB, globalDB, repoRoot, _args) {
+const KEYS_CAP = 50;
+// Caps a list of "category/subject" keys so status can never grow unbounded:
+// full fact bodies are never included, only counts and a capped key list.
+function boundedKeys(keys) {
+    if (keys.length <= KEYS_CAP)
+        return keys;
+    return [...keys.slice(0, KEYS_CAP), `+${keys.length - KEYS_CAP} more`];
+}
+export function handleStatus(repoRoot, globalDirPath, _args) {
     const head = getHead(repoRoot);
-    const nodes = repoDB
-        .prepare("SELECT name, type, summary FROM nodes ORDER BY name")
-        .all();
-    const allNodes = repoDB
-        .prepare("SELECT name, covers, last_commit FROM nodes")
-        .all();
+    const nodes = [];
     const staleNodes = [];
-    for (const node of allNodes) {
-        const covers = JSON.parse(node.covers || "[]");
+    for (const name of listNodes(repoRoot)) {
+        const node = readNode(repoRoot, name);
+        if (!node)
+            continue;
+        nodes.push({
+            name: node.name,
+            type: node.type,
+            summary: node.summary,
+            observation_count: node.observations.length,
+        });
         if (!node.last_commit) {
             staleNodes.push({ name: node.name, reason: "untracked", changed_files: [] });
             continue;
         }
-        if (covers.length === 0)
+        if (node.covers.length === 0)
             continue;
-        const changed = getChangedFiles(repoRoot, node.last_commit, covers);
+        const changed = getChangedFiles(repoRoot, node.last_commit, node.covers);
         if (changed.length > 0) {
             staleNodes.push({ name: node.name, reason: "changed", changed_files: changed });
         }
     }
-    const projectFacts = repoDB
-        .prepare("SELECT * FROM project_facts ORDER BY category, subject")
-        .all();
-    const globalFacts = globalDB
-        .prepare("SELECT * FROM facts ORDER BY category, subject")
-        .all();
-    const observations = repoDB
-        .prepare("SELECT node_name, content FROM observations ORDER BY created_at DESC")
-        .all();
-    const observationsByNode = {};
-    for (const obs of observations) {
-        if (!observationsByNode[obs.node_name])
-            observationsByNode[obs.node_name] = [];
-        if (observationsByNode[obs.node_name].length < 3) {
-            observationsByNode[obs.node_name].push(obs.content);
-        }
-    }
+    const projectFacts = listFacts(factsDir(repoRoot));
+    const globalFacts = listFacts(globalDirPath);
     return {
         head,
         nodes,
         stale_nodes: staleNodes,
-        project_facts: projectFacts,
-        global_facts: globalFacts,
-        observations_by_node: observationsByNode,
+        project_facts: {
+            count: projectFacts.length,
+            keys: boundedKeys(projectFacts.map((f) => `${f.category}/${f.subject}`)),
+        },
+        global_facts: {
+            count: globalFacts.length,
+            keys: boundedKeys(globalFacts.map((f) => `${f.category}/${f.subject}`)),
+        },
     };
 }
 //# sourceMappingURL=status.js.map

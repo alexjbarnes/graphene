@@ -1,4 +1,3 @@
-import type { GrapheneDatabase } from "../db.js";
-export declare function handleRemoveObservation(db: GrapheneDatabase, args: Record<string, unknown>): {
+export declare function handleRemoveObservation(repoRoot: string, args: Record<string, unknown>): {
     removed: boolean;
 };

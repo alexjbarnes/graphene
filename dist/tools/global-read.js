@@ -1,22 +1,12 @@
-export function handleGlobalRead(db, args) {
+import { listFacts } from "../store.js";
+export function handleGlobalRead(globalDirPath, args) {
     const category = args.category;
     const subject = args.subject;
-    let sql = "SELECT * FROM facts";
-    const conditions = [];
-    const params = [];
-    if (category) {
-        conditions.push("category = ?");
-        params.push(category);
-    }
-    if (subject) {
-        conditions.push("subject = ?");
-        params.push(subject);
-    }
-    if (conditions.length > 0) {
-        sql += " WHERE " + conditions.join(" AND ");
-    }
-    sql += " ORDER BY category, subject";
-    const facts = db.prepare(sql).all(...params);
+    let facts = listFacts(globalDirPath);
+    if (category)
+        facts = facts.filter((f) => f.category === category);
+    if (subject)
+        facts = facts.filter((f) => f.subject === subject);
     return { facts };
 }
 //# sourceMappingURL=global-read.js.map

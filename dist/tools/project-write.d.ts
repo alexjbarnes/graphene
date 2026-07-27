@@ -1,5 +1,4 @@
-import type { GrapheneDatabase } from "../db.js";
-export declare function handleProjectWrite(db: GrapheneDatabase, args: Record<string, unknown>): {
+export declare function handleProjectWrite(repoRoot: string, args: Record<string, unknown>): {
     category: string;
     subject: string;
 };

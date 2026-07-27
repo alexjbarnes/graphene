@@ -1,5 +1,18 @@
+import { readNode, writeNode } from "../store.js";
 import { BIDIRECTIONAL_EDGE_TYPES } from "../types.js";
-export function handleLink(db, args) {
+// Pure core shared with batch.ts: replaces the (to, type) edge if one already
+// exists (in place, so re-linking does not reshuffle edge order), else
+// appends it.
+export function upsertEdge(node, to, type, reason) {
+    const idx = node.edges.findIndex((e) => e.to === to && e.type === type);
+    const edges = [...node.edges];
+    if (idx === -1)
+        edges.push({ to, type, reason });
+    else
+        edges[idx] = { to, type, reason };
+    return { ...node, edges };
+}
+export function handleLink(repoRoot, args) {
     const from = args.from;
     const to = args.to;
     const type = args.type;
@@ -7,22 +20,17 @@ export function handleLink(db, args) {
     if (!from || !to || !type) {
         throw new Error("from, to, and type are required");
     }
-    const fromExists = db.prepare("SELECT 1 FROM nodes WHERE name = ?").get(from);
-    if (!fromExists)
+    const fromNode = readNode(repoRoot, from);
+    if (!fromNode)
         throw new Error(`Node not found: ${from}`);
-    const toExists = db.prepare("SELECT 1 FROM nodes WHERE name = ?").get(to);
-    if (!toExists)
+    const toNode = readNode(repoRoot, to);
+    if (!toNode)
         throw new Error(`Node not found: ${to}`);
-    const upsertEdge = db.prepare(`INSERT INTO edges (from_node, to_node, type, reason)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(from_node, to_node, type) DO UPDATE SET reason = excluded.reason`);
     const bidirectional = BIDIRECTIONAL_EDGE_TYPES.has(type);
-    db.transaction(() => {
-        upsertEdge.run(from, to, type, reason);
-        if (bidirectional) {
-            upsertEdge.run(to, from, type, reason);
-        }
-    })();
+    writeNode(repoRoot, upsertEdge(fromNode, to, type, reason));
+    if (bidirectional) {
+        writeNode(repoRoot, upsertEdge(toNode, from, type, reason));
+    }
     return { from, to, type, bidirectional };
 }
 //# sourceMappingURL=link.js.map

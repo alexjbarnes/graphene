@@ -1,7 +1,7 @@
-import type { GrapheneDatabase } from "../db.js";
+import { writeFact, factsDir } from "../store.js";
 
 export function handleProjectWrite(
-  db: GrapheneDatabase,
+  repoRoot: string,
   args: Record<string, unknown>
 ): { category: string; subject: string } {
   const category = args.category as string;
@@ -12,12 +12,7 @@ export function handleProjectWrite(
     throw new Error("category, subject, and content are required");
   }
 
-  db.prepare(
-    `INSERT INTO project_facts (category, subject, content)
-     VALUES (?, ?, ?)
-     ON CONFLICT(category, subject)
-     DO UPDATE SET content = excluded.content, updated_at = datetime('now')`
-  ).run(category, subject, content);
+  writeFact(factsDir(repoRoot), { category, subject, content });
 
   return { category, subject };
 }

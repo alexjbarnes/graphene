@@ -1,27 +1,32 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import type { GrapheneDatabase } from "../../src/db.js";
-import { createTestRepoDb } from "../helpers.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { createTestRepo, type TestRepoDir } from "../helpers.js";
 import { handleRead } from "../../src/tools/read.js";
 import { handleUpsertNode } from "../../src/tools/upsert-node.js";
+import { handleLink } from "../../src/tools/link.js";
+import { handleLearn } from "../../src/tools/learn.js";
 
 describe("read", () => {
-  let db: GrapheneDatabase;
+  let repo: TestRepoDir;
 
-  beforeEach(async () => {
-    db = await createTestRepoDb();
+  beforeEach(() => {
+    repo = createTestRepo();
+  });
+
+  afterEach(() => {
+    repo.cleanup();
   });
 
   describe("index (no name)", () => {
     it("returns empty array when no nodes exist", () => {
-      const result = handleRead(db, {});
+      const result = handleRead(repo.repoRoot, {});
       expect(result).toEqual({ nodes: [] });
     });
 
     it("returns all nodes sorted by name", () => {
-      handleUpsertNode(db, { name: "zebra", type: "module" });
-      handleUpsertNode(db, { name: "alpha", type: "subsystem", summary: "First" });
+      handleUpsertNode(repo.repoRoot, { name: "zebra", type: "module" });
+      handleUpsertNode(repo.repoRoot, { name: "alpha", type: "subsystem", summary: "First" });
 
-      const result = handleRead(db, {}) as { nodes: Array<{ name: string }> };
+      const result = handleRead(repo.repoRoot, {}) as { nodes: Array<{ name: string }> };
       expect(result.nodes).toHaveLength(2);
       expect(result.nodes[0].name).toBe("alpha");
       expect(result.nodes[1].name).toBe("zebra");
@@ -30,7 +35,7 @@ describe("read", () => {
 
   describe("single node", () => {
     it("returns full node data", () => {
-      handleUpsertNode(db, {
+      handleUpsertNode(repo.repoRoot, {
         name: "auth",
         type: "subsystem",
         summary: "Auth system",
@@ -40,7 +45,7 @@ describe("read", () => {
         metadata: { key: "val" },
       });
 
-      const result = handleRead(db, { name: "auth" }) as Record<string, unknown>;
+      const result = handleRead(repo.repoRoot, { name: "auth" }) as Record<string, unknown>;
       expect(result.name).toBe("auth");
       expect(result.type).toBe("subsystem");
       expect(result.summary).toBe("Auth system");
@@ -54,18 +59,15 @@ describe("read", () => {
     });
 
     it("throws for non-existent node", () => {
-      expect(() => handleRead(db, { name: "nope" })).toThrow("Node not found");
+      expect(() => handleRead(repo.repoRoot, { name: "nope" })).toThrow("Node not found");
     });
 
     it("includes edges with neighbor summaries", () => {
-      handleUpsertNode(db, { name: "auth", type: "subsystem", summary: "Auth" });
-      handleUpsertNode(db, { name: "db", type: "module", summary: "Database layer" });
+      handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem", summary: "Auth" });
+      handleUpsertNode(repo.repoRoot, { name: "db", type: "module", summary: "Database layer" });
+      handleLink(repo.repoRoot, { from: "auth", to: "db", type: "depends_on", reason: "stores creds" });
 
-      db.prepare(
-        "INSERT INTO edges (from_node, to_node, type, reason) VALUES (?, ?, ?, ?)"
-      ).run("auth", "db", "depends_on", "stores creds");
-
-      const result = handleRead(db, { name: "auth" }) as Record<string, unknown>;
+      const result = handleRead(repo.repoRoot, { name: "auth" }) as Record<string, unknown>;
       const edges = result.edges as Array<Record<string, unknown>>;
       expect(edges).toHaveLength(1);
       expect(edges[0]).toEqual({
@@ -76,52 +78,59 @@ describe("read", () => {
       });
     });
 
-    it("includes observations ordered by created_at", () => {
-      handleUpsertNode(db, { name: "auth", type: "subsystem" });
+    it("includes observations in file order, with string ids and no created_at", () => {
+      handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem" });
 
-      db.prepare(
-        "INSERT INTO observations (node_name, content, source) VALUES (?, ?, ?)"
-      ).run("auth", "First observation", null);
-      db.prepare(
-        "INSERT INTO observations (node_name, content, source) VALUES (?, ?, ?)"
-      ).run("auth", "Second observation", "debugging");
+      handleLearn(repo.repoRoot, { node_name: "auth", content: "First observation" });
+      handleLearn(repo.repoRoot, {
+        node_name: "auth",
+        content: "Second observation",
+        source: "debugging",
+      });
 
-      const result = handleRead(db, { name: "auth" }) as Record<string, unknown>;
+      const result = handleRead(repo.repoRoot, { name: "auth" }) as Record<string, unknown>;
       const obs = result.observations as Array<Record<string, unknown>>;
       expect(obs).toHaveLength(2);
       expect(obs[0].content).toBe("First observation");
       expect(obs[1].content).toBe("Second observation");
       expect(obs[1].source).toBe("debugging");
+      expect(obs[0].source).toBeNull();
+      expect(typeof obs[0].id).toBe("string");
+      expect(obs[0]).not.toHaveProperty("created_at");
     });
 
     it("includes incoming edges as dependents", () => {
-      handleUpsertNode(db, { name: "auth", type: "subsystem", summary: "Auth" });
-      handleUpsertNode(db, { name: "api", type: "subsystem", summary: "API layer" });
-      handleUpsertNode(db, { name: "ws", type: "subsystem", summary: "WebSocket" });
+      handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem", summary: "Auth" });
+      handleUpsertNode(repo.repoRoot, { name: "api", type: "subsystem", summary: "API layer" });
+      handleUpsertNode(repo.repoRoot, { name: "ws", type: "subsystem", summary: "WebSocket" });
 
-      db.prepare(
-        "INSERT INTO edges (from_node, to_node, type, reason) VALUES (?, ?, ?, ?)"
-      ).run("api", "auth", "depends_on", "uses auth middleware");
-      db.prepare(
-        "INSERT INTO edges (from_node, to_node, type, reason) VALUES (?, ?, ?, ?)"
-      ).run("ws", "auth", "depends_on", "validates connections");
+      handleLink(repo.repoRoot, {
+        from: "api",
+        to: "auth",
+        type: "depends_on",
+        reason: "uses auth middleware",
+      });
+      handleLink(repo.repoRoot, {
+        from: "ws",
+        to: "auth",
+        type: "depends_on",
+        reason: "validates connections",
+      });
 
-      const result = handleRead(db, { name: "auth" }) as Record<string, unknown>;
+      const result = handleRead(repo.repoRoot, { name: "auth" }) as Record<string, unknown>;
       const dependents = result.dependents as Array<Record<string, unknown>>;
       expect(dependents).toHaveLength(2);
       expect(dependents.map((d) => d.node)).toContain("api");
       expect(dependents.map((d) => d.node)).toContain("ws");
     });
 
-    it("includes observation IDs", () => {
-      handleUpsertNode(db, { name: "auth", type: "subsystem" });
-      db.prepare(
-        "INSERT INTO observations (node_name, content) VALUES (?, ?)"
-      ).run("auth", "Test observation");
+    it("includes observation ids matching what learn() returned", () => {
+      handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem" });
+      const { id } = handleLearn(repo.repoRoot, { node_name: "auth", content: "Test observation" });
 
-      const result = handleRead(db, { name: "auth" }) as Record<string, unknown>;
+      const result = handleRead(repo.repoRoot, { name: "auth" }) as Record<string, unknown>;
       const obs = result.observations as Array<Record<string, unknown>>;
-      expect(obs[0].id).toBeGreaterThan(0);
+      expect(obs[0].id).toBe(id);
     });
   });
 });

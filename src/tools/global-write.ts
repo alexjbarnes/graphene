@@ -1,7 +1,7 @@
-import type { GrapheneDatabase } from "../db.js";
+import { writeFact } from "../store.js";
 
 export function handleGlobalWrite(
-  db: GrapheneDatabase,
+  globalDirPath: string,
   args: Record<string, unknown>
 ): { category: string; subject: string } {
   const category = args.category as string;
@@ -12,12 +12,7 @@ export function handleGlobalWrite(
     throw new Error("category, subject, and content are required");
   }
 
-  db.prepare(
-    `INSERT INTO facts (category, subject, content)
-     VALUES (?, ?, ?)
-     ON CONFLICT(category, subject)
-     DO UPDATE SET content = excluded.content, updated_at = datetime('now')`
-  ).run(category, subject, content);
+  writeFact(globalDirPath, { category, subject, content });
 
   return { category, subject };
 }

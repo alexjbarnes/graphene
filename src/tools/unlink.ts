@@ -1,43 +1,42 @@
-import type { GrapheneDatabase } from "../db.js";
+import { readNode, writeNode } from "../store.js";
 import { BIDIRECTIONAL_EDGE_TYPES } from "../types.js";
 
 export function handleUnlink(
-  db: GrapheneDatabase,
+  repoRoot: string,
   args: Record<string, unknown>
 ): { removed: number } {
   const from = args.from as string;
   const to = args.to as string;
-  const type = (args.type as string) ?? null;
+  const type = (args.type as string | undefined) ?? null;
 
   if (!from || !to) throw new Error("from and to are required");
 
   let removed = 0;
 
-  db.transaction(() => {
-    if (type) {
-      const r1 = db
-        .prepare("DELETE FROM edges WHERE from_node = ? AND to_node = ? AND type = ?")
-        .run(from, to, type);
-      removed += r1.changes;
-
-      if (BIDIRECTIONAL_EDGE_TYPES.has(type)) {
-        const r2 = db
-          .prepare("DELETE FROM edges WHERE from_node = ? AND to_node = ? AND type = ?")
-          .run(to, from, type);
-        removed += r2.changes;
-      }
-    } else {
-      const r1 = db
-        .prepare("DELETE FROM edges WHERE from_node = ? AND to_node = ?")
-        .run(from, to);
-      removed += r1.changes;
-
-      const r2 = db
-        .prepare("DELETE FROM edges WHERE from_node = ? AND to_node = ?")
-        .run(to, from);
-      removed += r2.changes;
+  const fromNode = readNode(repoRoot, from);
+  if (fromNode) {
+    const kept = fromNode.edges.filter((e) => !(e.to === to && (type === null || e.type === type)));
+    if (kept.length !== fromNode.edges.length) {
+      removed += fromNode.edges.length - kept.length;
+      writeNode(repoRoot, { ...fromNode, edges: kept });
     }
-  })();
+  }
+
+  // With no type, both directions are always cleared regardless of whether
+  // any edge type present is registered bidirectional (an explicit "nuke the
+  // whole relationship" request). With a type, the reverse direction is only
+  // touched when that type is itself bidirectional.
+  const removeReverse = type === null || BIDIRECTIONAL_EDGE_TYPES.has(type);
+  if (removeReverse && to !== from) {
+    const toNode = readNode(repoRoot, to);
+    if (toNode) {
+      const kept = toNode.edges.filter((e) => !(e.to === from && (type === null || e.type === type)));
+      if (kept.length !== toNode.edges.length) {
+        removed += toNode.edges.length - kept.length;
+        writeNode(repoRoot, { ...toNode, edges: kept });
+      }
+    }
+  }
 
   return { removed };
 }

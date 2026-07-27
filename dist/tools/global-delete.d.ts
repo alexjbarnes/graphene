@@ -1,4 +1,3 @@
-import type { GrapheneDatabase } from "../db.js";
-export declare function handleGlobalDelete(db: GrapheneDatabase, args: Record<string, unknown>): {
+export declare function handleGlobalDelete(globalDirPath: string, args: Record<string, unknown>): {
     deleted: boolean;
 };

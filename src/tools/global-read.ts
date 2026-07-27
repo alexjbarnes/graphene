@@ -1,32 +1,15 @@
-import type { GrapheneDatabase } from "../db.js";
-import type { Fact } from "../types.js";
+import { listFacts, type StoredFact } from "../store.js";
 
 export function handleGlobalRead(
-  db: GrapheneDatabase,
+  globalDirPath: string,
   args: Record<string, unknown>
-): { facts: Fact[] } {
+): { facts: StoredFact[] } {
   const category = args.category as string | undefined;
   const subject = args.subject as string | undefined;
 
-  let sql = "SELECT * FROM facts";
-  const conditions: string[] = [];
-  const params: string[] = [];
+  let facts = listFacts(globalDirPath);
+  if (category) facts = facts.filter((f) => f.category === category);
+  if (subject) facts = facts.filter((f) => f.subject === subject);
 
-  if (category) {
-    conditions.push("category = ?");
-    params.push(category);
-  }
-  if (subject) {
-    conditions.push("subject = ?");
-    params.push(subject);
-  }
-
-  if (conditions.length > 0) {
-    sql += " WHERE " + conditions.join(" AND ");
-  }
-
-  sql += " ORDER BY category, subject";
-
-  const facts = db.prepare(sql).all(...params) as unknown as Fact[];
   return { facts };
 }

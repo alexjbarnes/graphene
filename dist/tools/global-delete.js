@@ -1,12 +1,10 @@
-export function handleGlobalDelete(db, args) {
+import { deleteFactFile } from "../store.js";
+export function handleGlobalDelete(globalDirPath, args) {
     const category = args.category;
     const subject = args.subject;
     if (!category || !subject) {
         throw new Error("category and subject are required");
     }
-    const result = db
-        .prepare("DELETE FROM facts WHERE category = ? AND subject = ?")
-        .run(category, subject);
-    return { deleted: result.changes > 0 };
+    return { deleted: deleteFactFile(globalDirPath, category, subject) };
 }
 //# sourceMappingURL=global-delete.js.map

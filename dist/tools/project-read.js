@@ -1,22 +1,12 @@
-export function handleProjectRead(db, args) {
+import { listFacts, factsDir } from "../store.js";
+export function handleProjectRead(repoRoot, args) {
     const category = args.category;
     const subject = args.subject;
-    let sql = "SELECT * FROM project_facts";
-    const conditions = [];
-    const params = [];
-    if (category) {
-        conditions.push("category = ?");
-        params.push(category);
-    }
-    if (subject) {
-        conditions.push("subject = ?");
-        params.push(subject);
-    }
-    if (conditions.length > 0) {
-        sql += " WHERE " + conditions.join(" AND ");
-    }
-    sql += " ORDER BY category, subject";
-    const facts = db.prepare(sql).all(...params);
+    let facts = listFacts(factsDir(repoRoot));
+    if (category)
+        facts = facts.filter((f) => f.category === category);
+    if (subject)
+        facts = facts.filter((f) => f.subject === subject);
     return { facts };
 }
 //# sourceMappingURL=project-read.js.map

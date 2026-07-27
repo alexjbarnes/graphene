@@ -1,132 +1,98 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import type { GrapheneDatabase } from "../../src/db.js";
-import { createTestGlobalDb } from "../helpers.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { readFact } from "../../src/store.js";
+import { createTestGlobalDir, type TestGlobalDir } from "../helpers.js";
 import { handleGlobalRead } from "../../src/tools/global-read.js";
 import { handleGlobalWrite } from "../../src/tools/global-write.js";
 import { handleGlobalDelete } from "../../src/tools/global-delete.js";
 
 describe("global tools", () => {
-  let db: GrapheneDatabase;
+  let global: TestGlobalDir;
 
-  beforeEach(async () => {
-    db = await createTestGlobalDb();
+  beforeEach(() => {
+    global = createTestGlobalDir();
+  });
+
+  afterEach(() => {
+    global.cleanup();
   });
 
   describe("global_write", () => {
     it("writes a fact", () => {
-      const result = handleGlobalWrite(db, {
+      const result = handleGlobalWrite(global.dir, {
         category: "preference",
         subject: "testing",
         content: "TDD only",
       });
 
       expect(result).toEqual({ category: "preference", subject: "testing" });
-
-      const facts = db.prepare("SELECT * FROM facts").all() as Array<Record<string, unknown>>;
-      expect(facts).toHaveLength(1);
-      expect(facts[0].content).toBe("TDD only");
+      expect(readFact(global.dir, "preference", "testing")!.content).toBe("TDD only");
     });
 
     it("overwrites existing fact with same category+subject", () => {
-      handleGlobalWrite(db, {
-        category: "preference",
-        subject: "testing",
-        content: "TDD only",
-      });
-      handleGlobalWrite(db, {
-        category: "preference",
-        subject: "testing",
-        content: "BDD preferred",
-      });
+      handleGlobalWrite(global.dir, { category: "preference", subject: "testing", content: "TDD only" });
+      handleGlobalWrite(global.dir, { category: "preference", subject: "testing", content: "BDD preferred" });
 
-      const facts = db.prepare("SELECT * FROM facts").all() as Array<Record<string, unknown>>;
-      expect(facts).toHaveLength(1);
-      expect(facts[0].content).toBe("BDD preferred");
+      expect(readFact(global.dir, "preference", "testing")!.content).toBe("BDD preferred");
     });
 
     it("allows same category with different subjects", () => {
-      handleGlobalWrite(db, {
-        category: "preference",
-        subject: "testing",
-        content: "TDD",
-      });
-      handleGlobalWrite(db, {
-        category: "preference",
-        subject: "go",
-        content: "encoding/json only",
-      });
+      handleGlobalWrite(global.dir, { category: "preference", subject: "testing", content: "TDD" });
+      handleGlobalWrite(global.dir, { category: "preference", subject: "go", content: "encoding/json only" });
 
-      const facts = db.prepare("SELECT * FROM facts").all();
-      expect(facts).toHaveLength(2);
+      const result = handleGlobalRead(global.dir, {});
+      expect(result.facts).toHaveLength(2);
     });
   });
 
   describe("global_delete", () => {
     it("deletes an existing fact", () => {
-      handleGlobalWrite(db, { category: "preference", subject: "testing", content: "TDD" });
-      const result = handleGlobalDelete(db, { category: "preference", subject: "testing" });
+      handleGlobalWrite(global.dir, { category: "preference", subject: "testing", content: "TDD" });
+      const result = handleGlobalDelete(global.dir, { category: "preference", subject: "testing" });
       expect(result.deleted).toBe(true);
 
-      const facts = db.prepare("SELECT * FROM facts").all();
-      expect(facts).toHaveLength(0);
+      expect(readFact(global.dir, "preference", "testing")).toBeNull();
     });
 
     it("returns false for non-existent fact", () => {
-      const result = handleGlobalDelete(db, { category: "preference", subject: "nope" });
+      const result = handleGlobalDelete(global.dir, { category: "preference", subject: "nope" });
       expect(result.deleted).toBe(false);
     });
 
     it("only deletes the matching category+subject", () => {
-      handleGlobalWrite(db, { category: "preference", subject: "testing", content: "TDD" });
-      handleGlobalWrite(db, { category: "preference", subject: "go", content: "std only" });
-      handleGlobalDelete(db, { category: "preference", subject: "testing" });
+      handleGlobalWrite(global.dir, { category: "preference", subject: "testing", content: "TDD" });
+      handleGlobalWrite(global.dir, { category: "preference", subject: "go", content: "std only" });
+      handleGlobalDelete(global.dir, { category: "preference", subject: "testing" });
 
-      const facts = db.prepare("SELECT * FROM facts").all();
-      expect(facts).toHaveLength(1);
+      expect(handleGlobalRead(global.dir, {}).facts).toHaveLength(1);
     });
   });
 
   describe("global_read", () => {
-    beforeEach(async () => {
-      handleGlobalWrite(db, {
-        category: "preference",
-        subject: "testing",
-        content: "TDD only",
-      });
-      handleGlobalWrite(db, {
-        category: "preference",
-        subject: "go",
-        content: "Use encoding/json",
-      });
-      handleGlobalWrite(db, {
-        category: "expertise",
-        subject: "go",
-        content: "10 years experience",
-      });
+    beforeEach(() => {
+      handleGlobalWrite(global.dir, { category: "preference", subject: "testing", content: "TDD only" });
+      handleGlobalWrite(global.dir, { category: "preference", subject: "go", content: "Use encoding/json" });
+      handleGlobalWrite(global.dir, { category: "expertise", subject: "go", content: "10 years experience" });
     });
 
     it("returns all facts with no filters", () => {
-      const result = handleGlobalRead(db, {});
+      const result = handleGlobalRead(global.dir, {});
       expect(result.facts).toHaveLength(3);
     });
 
     it("filters by category", () => {
-      const result = handleGlobalRead(db, { category: "preference" });
+      const result = handleGlobalRead(global.dir, { category: "preference" });
       expect(result.facts).toHaveLength(2);
       expect(result.facts.every((f) => f.category === "preference")).toBe(true);
     });
 
     it("filters by subject", () => {
-      const result = handleGlobalRead(db, { subject: "go" });
+      const result = handleGlobalRead(global.dir, { subject: "go" });
       expect(result.facts).toHaveLength(2);
       expect(result.facts.every((f) => f.subject === "go")).toBe(true);
     });
 
     it("filters by both category and subject", () => {
-      const result = handleGlobalRead(db, {
-        category: "preference",
-        subject: "go",
-      });
+      const result = handleGlobalRead(global.dir, { category: "preference", subject: "go" });
       expect(result.facts).toHaveLength(1);
       expect(result.facts[0].content).toBe("Use encoding/json");
     });

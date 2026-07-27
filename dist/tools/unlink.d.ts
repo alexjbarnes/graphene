@@ -1,4 +1,3 @@
-import type { GrapheneDatabase } from "../db.js";
-export declare function handleUnlink(db: GrapheneDatabase, args: Record<string, unknown>): {
+export declare function handleUnlink(repoRoot: string, args: Record<string, unknown>): {
     removed: number;
 };

@@ -1,9 +1,7 @@
 #!/usr/bin/env node
 
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { homedir } from "node:os";
 import { readState, writeState, cleanupStaleSessions } from "./lib/state.mjs";
 
 function getRepoRoot() {
@@ -19,77 +17,48 @@ function getRepoRoot() {
 
 async function getStatus(repoRoot) {
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || join(import.meta.dirname, "..");
-  const { initSql, openDatabase, initRepoSchema, initGlobalSchema } =
-    await import(join(pluginRoot, "dist", "db.js"));
+  const { globalDir } = await import(join(pluginRoot, "dist", "store.js"));
   const { handleStatus } = await import(join(pluginRoot, "dist", "tools", "status.js"));
-
-  await initSql();
-
-  const repoDbPath = join(repoRoot, ".graphene", "context.db");
-  const globalDbPath = join(homedir(), ".graphene", "global.db");
-
-  const repoDB = openDatabase(repoDbPath);
-  initRepoSchema(repoDB);
-  const globalDB = openDatabase(globalDbPath);
-  initGlobalSchema(globalDB);
-
-  try {
-    return handleStatus(repoDB, globalDB, repoRoot, {});
-  } finally {
-    repoDB.close();
-    globalDB.close();
-  }
+  return handleStatus(repoRoot, globalDir(), {});
 }
 
 async function getAffectedNodes(repoRoot) {
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || join(import.meta.dirname, "..");
-  const { initSql, openDatabase, initRepoSchema } =
-    await import(join(pluginRoot, "dist", "db.js"));
+  const { listNodes, readNode } = await import(join(pluginRoot, "dist", "store.js"));
 
-  const repoDbPath = join(repoRoot, ".graphene", "context.db");
-  if (!existsSync(repoDbPath)) return [];
-
-  await initSql();
-
-  const repoDB = openDatabase(repoDbPath);
-  initRepoSchema(repoDB);
-
+  let committedFiles;
   try {
-    let committedFiles;
-    try {
-      committedFiles = execSync("git diff-tree --no-commit-id --name-only -r HEAD", {
-        cwd: repoRoot,
-        encoding: "utf-8",
-        stdio: ["pipe", "pipe", "pipe"],
-      }).trim().split("\n").filter(Boolean);
-    } catch {
-      return [];
-    }
-
-    if (committedFiles.length === 0) return [];
-
-    const nodes = repoDB.prepare("SELECT name, covers FROM nodes").all();
-
-    const affected = [];
-    for (const node of nodes) {
-      const covers = JSON.parse(node.covers || "[]");
-      if (covers.length === 0) continue;
-
-      const matching = committedFiles.filter(file =>
-        covers.some(pattern => file.startsWith(pattern.replace(/\*.*$/, "")))
-      );
-
-      if (matching.length > 0) {
-        affected.push({ name: node.name, files: matching });
-      }
-    }
-
-    return affected;
-  } finally {
-    repoDB.close();
+    committedFiles = execSync("git diff-tree --no-commit-id --name-only -r HEAD", {
+      cwd: repoRoot,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim().split("\n").filter(Boolean);
+  } catch {
+    return [];
   }
+
+  if (committedFiles.length === 0) return [];
+
+  const affected = [];
+  for (const name of listNodes(repoRoot)) {
+    const node = readNode(repoRoot, name);
+    if (!node || node.covers.length === 0) continue;
+
+    const matching = committedFiles.filter(file =>
+      node.covers.some(pattern => file.startsWith(pattern.replace(/\*.*$/, "")))
+    );
+
+    if (matching.length > 0) {
+      affected.push({ name, files: matching });
+    }
+  }
+
+  return affected;
 }
 
+// Status is a bounded map now: node index with observation counts, stale
+// names, and fact keys. Bodies are never injected; detail comes from
+// read(name), project_read, and global_read on demand.
 function formatStatus(status) {
   const lines = [`HEAD: ${status.head}`];
 
@@ -98,13 +67,8 @@ function formatStatus(status) {
   } else {
     lines.push(`Nodes (${status.nodes.length}):`);
     for (const n of status.nodes) {
-      lines.push(`  - ${n.name} [${n.type}]${n.summary ? ": " + n.summary : ""}`);
-      const obs = status.observations_by_node?.[n.name];
-      if (obs && obs.length > 0) {
-        for (const o of obs) {
-          lines.push(`      * ${o}`);
-        }
-      }
+      const obs = n.observation_count > 0 ? ` (${n.observation_count} obs)` : "";
+      lines.push(`  - ${n.name} [${n.type}]${obs}${n.summary ? ": " + n.summary : ""}`);
     }
   }
 
@@ -116,18 +80,14 @@ function formatStatus(status) {
     }
   }
 
-  if (status.project_facts.length > 0) {
-    lines.push(`Project facts (${status.project_facts.length}):`);
-    for (const f of status.project_facts) {
-      lines.push(`  - [${f.category}/${f.subject}] ${f.content}`);
-    }
+  if (status.project_facts.count > 0) {
+    lines.push(`Project facts (${status.project_facts.count}), read with project_read:`);
+    lines.push(`  ${status.project_facts.keys.join(", ")}`);
   }
 
-  if (status.global_facts.length > 0) {
-    lines.push(`Global facts (${status.global_facts.length}):`);
-    for (const f of status.global_facts) {
-      lines.push(`  - [${f.category}/${f.subject}] ${f.content}`);
-    }
+  if (status.global_facts.count > 0) {
+    lines.push(`Global facts (${status.global_facts.count}), read with global_read:`);
+    lines.push(`  ${status.global_facts.keys.join(", ")}`);
   }
 
   return lines.join("\n");

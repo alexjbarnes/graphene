@@ -1,14 +1,12 @@
-export function handleProjectWrite(db, args) {
+import { writeFact, factsDir } from "../store.js";
+export function handleProjectWrite(repoRoot, args) {
     const category = args.category;
     const subject = args.subject;
     const content = args.content;
     if (!category || !subject || !content) {
         throw new Error("category, subject, and content are required");
     }
-    db.prepare(`INSERT INTO project_facts (category, subject, content)
-     VALUES (?, ?, ?)
-     ON CONFLICT(category, subject)
-     DO UPDATE SET content = excluded.content, updated_at = datetime('now')`).run(category, subject, content);
+    writeFact(factsDir(repoRoot), { category, subject, content });
     return { category, subject };
 }
 //# sourceMappingURL=project-write.js.map

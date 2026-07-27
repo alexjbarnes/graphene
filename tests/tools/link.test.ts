@@ -1,22 +1,26 @@
-import { describe, it, expect, beforeEach } from "vitest";
-import type { GrapheneDatabase } from "../../src/db.js";
-import { createTestRepoDb } from "../helpers.js";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { readNode } from "../../src/store.js";
+import { createTestRepo, type TestRepoDir } from "../helpers.js";
 import { handleLink } from "../../src/tools/link.js";
 import { handleUnlink } from "../../src/tools/unlink.js";
 import { handleUpsertNode } from "../../src/tools/upsert-node.js";
 
 describe("link", () => {
-  let db: GrapheneDatabase;
+  let repo: TestRepoDir;
 
-  beforeEach(async () => {
-    db = await createTestRepoDb();
-    handleUpsertNode(db, { name: "auth", type: "subsystem" });
-    handleUpsertNode(db, { name: "db", type: "module" });
-    handleUpsertNode(db, { name: "session", type: "subsystem" });
+  beforeEach(() => {
+    repo = createTestRepo();
+    handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem" });
+    handleUpsertNode(repo.repoRoot, { name: "db", type: "module" });
+    handleUpsertNode(repo.repoRoot, { name: "session", type: "subsystem" });
+  });
+
+  afterEach(() => {
+    repo.cleanup();
   });
 
   it("creates a directional edge", () => {
-    const result = handleLink(db, {
+    const result = handleLink(repo.repoRoot, {
       from: "auth",
       to: "db",
       type: "depends_on",
@@ -25,14 +29,14 @@ describe("link", () => {
 
     expect(result.bidirectional).toBe(false);
 
-    const edges = db.prepare("SELECT * FROM edges").all() as Array<Record<string, unknown>>;
-    expect(edges).toHaveLength(1);
-    expect(edges[0].from_node).toBe("auth");
-    expect(edges[0].to_node).toBe("db");
+    const auth = readNode(repo.repoRoot, "auth")!;
+    expect(auth.edges).toEqual([{ to: "db", type: "depends_on", reason: "stores creds" }]);
+    const db = readNode(repo.repoRoot, "db")!;
+    expect(db.edges).toEqual([]);
   });
 
   it("creates bidirectional edges for related_to", () => {
-    const result = handleLink(db, {
+    const result = handleLink(repo.repoRoot, {
       from: "auth",
       to: "session",
       type: "related_to",
@@ -41,96 +45,110 @@ describe("link", () => {
 
     expect(result.bidirectional).toBe(true);
 
-    const edges = db.prepare("SELECT * FROM edges").all();
-    expect(edges).toHaveLength(2);
+    expect(readNode(repo.repoRoot, "auth")!.edges).toHaveLength(1);
+    expect(readNode(repo.repoRoot, "session")!.edges).toHaveLength(1);
   });
 
   it("creates bidirectional edges for mirrors", () => {
-    handleLink(db, { from: "auth", to: "session", type: "mirrors" });
-    const edges = db.prepare("SELECT * FROM edges").all();
-    expect(edges).toHaveLength(2);
+    handleLink(repo.repoRoot, { from: "auth", to: "session", type: "mirrors" });
+    expect(readNode(repo.repoRoot, "auth")!.edges).toHaveLength(1);
+    expect(readNode(repo.repoRoot, "session")!.edges).toHaveLength(1);
   });
 
   it("updates reason on re-link", () => {
-    handleLink(db, {
-      from: "auth",
-      to: "db",
-      type: "depends_on",
-      reason: "original",
-    });
-    handleLink(db, {
-      from: "auth",
-      to: "db",
-      type: "depends_on",
-      reason: "updated",
-    });
+    handleLink(repo.repoRoot, { from: "auth", to: "db", type: "depends_on", reason: "original" });
+    handleLink(repo.repoRoot, { from: "auth", to: "db", type: "depends_on", reason: "updated" });
 
-    const edges = db.prepare("SELECT * FROM edges").all() as Array<Record<string, unknown>>;
-    expect(edges).toHaveLength(1);
-    expect(edges[0].reason).toBe("updated");
+    const auth = readNode(repo.repoRoot, "auth")!;
+    expect(auth.edges).toHaveLength(1);
+    expect(auth.edges[0].reason).toBe("updated");
   });
 
   it("fails if source node does not exist", () => {
     expect(() =>
-      handleLink(db, { from: "nope", to: "db", type: "depends_on" })
+      handleLink(repo.repoRoot, { from: "nope", to: "db", type: "depends_on" })
     ).toThrow("Node not found: nope");
   });
 
   it("fails if target node does not exist", () => {
     expect(() =>
-      handleLink(db, { from: "auth", to: "nope", type: "depends_on" })
+      handleLink(repo.repoRoot, { from: "auth", to: "nope", type: "depends_on" })
     ).toThrow("Node not found: nope");
+  });
+
+  it("supports a self-link without duplicating or losing the edge", () => {
+    const result = handleLink(repo.repoRoot, {
+      from: "auth",
+      to: "auth",
+      type: "related_to",
+      reason: "self note",
+    });
+    expect(result.bidirectional).toBe(true);
+
+    const auth = readNode(repo.repoRoot, "auth")!;
+    expect(auth.edges).toEqual([{ to: "auth", type: "related_to", reason: "self note" }]);
   });
 });
 
 describe("unlink", () => {
-  let db: GrapheneDatabase;
+  let repo: TestRepoDir;
 
-  beforeEach(async () => {
-    db = await createTestRepoDb();
-    handleUpsertNode(db, { name: "auth", type: "subsystem" });
-    handleUpsertNode(db, { name: "db", type: "module" });
-    handleUpsertNode(db, { name: "session", type: "subsystem" });
+  beforeEach(() => {
+    repo = createTestRepo();
+    handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem" });
+    handleUpsertNode(repo.repoRoot, { name: "db", type: "module" });
+    handleUpsertNode(repo.repoRoot, { name: "session", type: "subsystem" });
+  });
+
+  afterEach(() => {
+    repo.cleanup();
   });
 
   it("removes a specific edge type", () => {
-    handleLink(db, { from: "auth", to: "db", type: "depends_on" });
-    const result = handleUnlink(db, {
-      from: "auth",
-      to: "db",
-      type: "depends_on",
-    });
+    handleLink(repo.repoRoot, { from: "auth", to: "db", type: "depends_on" });
+    const result = handleUnlink(repo.repoRoot, { from: "auth", to: "db", type: "depends_on" });
 
     expect(result.removed).toBe(1);
-    const edges = db.prepare("SELECT * FROM edges").all();
-    expect(edges).toHaveLength(0);
+    expect(readNode(repo.repoRoot, "auth")!.edges).toEqual([]);
   });
 
   it("removes all edges between nodes when no type specified", () => {
-    handleLink(db, { from: "auth", to: "db", type: "depends_on" });
-    handleLink(db, { from: "auth", to: "db", type: "related_to" });
+    handleLink(repo.repoRoot, { from: "auth", to: "db", type: "depends_on" });
+    handleLink(repo.repoRoot, { from: "auth", to: "db", type: "related_to" });
 
-    const result = handleUnlink(db, { from: "auth", to: "db" });
+    const result = handleUnlink(repo.repoRoot, { from: "auth", to: "db" });
     expect(result.removed).toBeGreaterThan(0);
 
-    const edges = db.prepare("SELECT * FROM edges").all();
-    expect(edges).toHaveLength(0);
+    expect(readNode(repo.repoRoot, "auth")!.edges).toEqual([]);
+    expect(readNode(repo.repoRoot, "db")!.edges).toEqual([]);
   });
 
   it("removes both directions for bidirectional types", () => {
-    handleLink(db, { from: "auth", to: "session", type: "related_to" });
+    handleLink(repo.repoRoot, { from: "auth", to: "session", type: "related_to" });
 
-    const before = db.prepare("SELECT * FROM edges").all();
-    expect(before).toHaveLength(2);
+    expect(readNode(repo.repoRoot, "auth")!.edges).toHaveLength(1);
+    expect(readNode(repo.repoRoot, "session")!.edges).toHaveLength(1);
 
-    const result = handleUnlink(db, {
-      from: "auth",
-      to: "session",
-      type: "related_to",
-    });
+    const result = handleUnlink(repo.repoRoot, { from: "auth", to: "session", type: "related_to" });
     expect(result.removed).toBe(2);
 
-    const after = db.prepare("SELECT * FROM edges").all();
-    expect(after).toHaveLength(0);
+    expect(readNode(repo.repoRoot, "auth")!.edges).toEqual([]);
+    expect(readNode(repo.repoRoot, "session")!.edges).toEqual([]);
+  });
+
+  it("does not touch the reverse direction for a non-bidirectional type", () => {
+    handleLink(repo.repoRoot, { from: "auth", to: "db", type: "depends_on" });
+    handleLink(repo.repoRoot, { from: "db", to: "auth", type: "depends_on" });
+
+    const result = handleUnlink(repo.repoRoot, { from: "auth", to: "db", type: "depends_on" });
+    expect(result.removed).toBe(1);
+
+    expect(readNode(repo.repoRoot, "auth")!.edges).toEqual([]);
+    expect(readNode(repo.repoRoot, "db")!.edges).toEqual([{ to: "auth", type: "depends_on", reason: null }]);
+  });
+
+  it("is a no-op (not an error) when there is nothing to remove", () => {
+    const result = handleUnlink(repo.repoRoot, { from: "auth", to: "db" });
+    expect(result.removed).toBe(0);
   });
 });

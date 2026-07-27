@@ -1,7 +1,7 @@
-import type { GrapheneDatabase } from "../db.js";
+import { deleteFactFile } from "../store.js";
 
 export function handleGlobalDelete(
-  db: GrapheneDatabase,
+  globalDirPath: string,
   args: Record<string, unknown>
 ): { deleted: boolean } {
   const category = args.category as string;
@@ -11,9 +11,5 @@ export function handleGlobalDelete(
     throw new Error("category and subject are required");
   }
 
-  const result = db
-    .prepare("DELETE FROM facts WHERE category = ? AND subject = ?")
-    .run(category, subject);
-
-  return { deleted: result.changes > 0 };
+  return { deleted: deleteFactFile(globalDirPath, category, subject) };
 }

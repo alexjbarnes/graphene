@@ -2,30 +2,6 @@ import { execSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { initSql, openMemoryDatabase, initRepoSchema, initGlobalSchema, type GrapheneDatabase } from "../src/db.js";
-
-let initialized = false;
-
-async function ensureInit() {
-  if (!initialized) {
-    await initSql();
-    initialized = true;
-  }
-}
-
-export async function createTestRepoDb(): Promise<GrapheneDatabase> {
-  await ensureInit();
-  const db = openMemoryDatabase();
-  initRepoSchema(db);
-  return db;
-}
-
-export async function createTestGlobalDb(): Promise<GrapheneDatabase> {
-  await ensureInit();
-  const db = openMemoryDatabase();
-  initGlobalSchema(db);
-  return db;
-}
 
 export interface TestRepo {
   path: string;
@@ -58,5 +34,35 @@ export function createTestGitRepo(): TestRepo {
       mkdirSync(join(path, dirname(name)), { recursive: true });
       writeFileSync(join(path, name), content);
     },
+  };
+}
+
+export interface TestRepoDir {
+  repoRoot: string;
+  cleanup: () => void;
+}
+
+// A plain directory to use as a graphene repoRoot. Storage tools only ever
+// touch `${repoRoot}/.graphene/...` and never require the directory to be a
+// git repo; use createTestGitRepo() instead when the test needs real git
+// history (stale, status, e2e).
+export function createTestRepo(): TestRepoDir {
+  const repoRoot = mkdtempSync(join(tmpdir(), "graphene-repo-test-"));
+  return {
+    repoRoot,
+    cleanup: () => rmSync(repoRoot, { recursive: true, force: true }),
+  };
+}
+
+export interface TestGlobalDir {
+  dir: string;
+  cleanup: () => void;
+}
+
+export function createTestGlobalDir(): TestGlobalDir {
+  const dir = mkdtempSync(join(tmpdir(), "graphene-global-test-"));
+  return {
+    dir,
+    cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };
 }

@@ -1,4 +1,3 @@
-import type { GrapheneDatabase } from "../db.js";
-export declare function handleProjectDelete(db: GrapheneDatabase, args: Record<string, unknown>): {
+export declare function handleProjectDelete(repoRoot: string, args: Record<string, unknown>): {
     deleted: boolean;
 };

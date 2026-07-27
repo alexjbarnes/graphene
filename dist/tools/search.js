@@ -1,79 +1,85 @@
+import { listNodes, readNode, listFacts, factsDir } from "../store.js";
+const MAX_RESULTS = 20;
+const SNIPPET_LIMIT = 200;
 function scoreMatch(text, words) {
     const lower = text.toLowerCase();
-    return words.filter(w => lower.includes(w.toLowerCase())).length;
+    return words.filter((w) => lower.includes(w.toLowerCase())).length;
 }
-export function handleSearch(repoDB, globalDB, args) {
+function truncate(text) {
+    if (text.length <= SNIPPET_LIMIT)
+        return text;
+    return text.slice(0, SNIPPET_LIMIT) + "...";
+}
+export function handleSearch(repoRoot, globalDirPath, args) {
     const query = args.query;
     if (!query)
         throw new Error("query is required");
     const words = query.split(/\s+/).filter(Boolean);
     if (words.length === 0)
         throw new Error("query is required");
+    const nodes = listNodes(repoRoot)
+        .map((name) => readNode(repoRoot, name))
+        .filter((n) => n !== null);
     const results = [];
-    const patterns = words.map(w => `%${w}%`);
-    const nodeWhere = words.map(() => "(name LIKE ? OR summary LIKE ?)").join(" OR ");
-    const nodeParams = patterns.flatMap(p => [p, p]);
-    const nodeMatches = repoDB
-        .prepare(`SELECT name, type, summary FROM nodes WHERE ${nodeWhere}`)
-        .all(...nodeParams);
-    for (const m of nodeMatches) {
-        results.push({
-            type: "node",
-            node_name: m.name,
-            snippet: m.summary ?? m.name,
-            score: scoreMatch(`${m.name} ${m.summary || ""}`, words),
-        });
+    for (const node of nodes) {
+        const score = scoreMatch(`${node.name} ${node.summary ?? ""}`, words);
+        if (score > 0) {
+            results.push({
+                type: "node",
+                node_name: node.name,
+                snippet: truncate(node.summary ?? node.name),
+                score,
+            });
+        }
     }
-    const obsWhere = words.map(() => "o.content LIKE ?").join(" OR ");
-    const obsMatches = repoDB
-        .prepare(`SELECT o.node_name, o.content, o.created_at FROM observations o WHERE ${obsWhere}`)
-        .all(...patterns);
-    for (const m of obsMatches) {
-        results.push({
-            type: "observation",
-            node_name: m.node_name,
-            snippet: m.content,
-            created_at: m.created_at,
-            score: scoreMatch(m.content, words),
-        });
+    for (const node of nodes) {
+        for (const obs of node.observations) {
+            const score = scoreMatch(obs.content, words);
+            if (score > 0) {
+                results.push({ type: "observation", node_name: node.name, snippet: truncate(obs.content), score });
+            }
+        }
     }
-    const factWhere = words.map(() => "(category LIKE ? OR subject LIKE ? OR content LIKE ?)").join(" OR ");
-    const factParams = patterns.flatMap(p => [p, p, p]);
-    const projectFacts = repoDB
-        .prepare(`SELECT category, subject, content FROM project_facts WHERE ${factWhere}`)
-        .all(...factParams);
-    for (const f of projectFacts) {
-        results.push({
-            type: "project_fact",
-            node_name: `${f.category}/${f.subject}`,
-            snippet: f.content,
-            score: scoreMatch(`${f.category} ${f.subject} ${f.content}`, words),
-        });
+    for (const fact of listFacts(factsDir(repoRoot))) {
+        const score = scoreMatch(`${fact.category} ${fact.subject} ${fact.content}`, words);
+        if (score > 0) {
+            results.push({
+                type: "project_fact",
+                node_name: `${fact.category}/${fact.subject}`,
+                snippet: truncate(fact.content),
+                score,
+            });
+        }
     }
-    const globalFacts = globalDB
-        .prepare(`SELECT category, subject, content FROM facts WHERE ${factWhere}`)
-        .all(...factParams);
-    for (const f of globalFacts) {
-        results.push({
-            type: "global_fact",
-            node_name: `${f.category}/${f.subject}`,
-            snippet: f.content,
-            score: scoreMatch(`${f.category} ${f.subject} ${f.content}`, words),
-        });
+    for (const fact of listFacts(globalDirPath)) {
+        const score = scoreMatch(`${fact.category} ${fact.subject} ${fact.content}`, words);
+        if (score > 0) {
+            results.push({
+                type: "global_fact",
+                node_name: `${fact.category}/${fact.subject}`,
+                snippet: truncate(fact.content),
+                score,
+            });
+        }
     }
-    const edgeWhere = words.map(() => "reason LIKE ?").join(" OR ");
-    const edgeMatches = repoDB
-        .prepare(`SELECT from_node, to_node, type, reason FROM edges WHERE reason IS NOT NULL AND (${edgeWhere})`)
-        .all(...patterns);
-    for (const e of edgeMatches) {
-        results.push({
-            type: "edge",
-            node_name: `${e.from_node} -> ${e.to_node}`,
-            snippet: `[${e.type}] ${e.reason}`,
-            score: scoreMatch(e.reason, words),
-        });
+    for (const node of nodes) {
+        for (const edge of node.edges) {
+            if (edge.reason === null)
+                continue;
+            const score = scoreMatch(edge.reason, words);
+            if (score > 0) {
+                results.push({
+                    type: "edge",
+                    node_name: `${node.name} -> ${edge.to}`,
+                    snippet: truncate(`[${edge.type}] ${edge.reason}`),
+                    score,
+                });
+            }
+        }
     }
-    results.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
-    return { results };
+    results.sort((a, b) => b.score - a.score);
+    const omitted = results.length - MAX_RESULTS;
+    const bounded = results.slice(0, MAX_RESULTS);
+    return omitted > 0 ? { results: bounded, omitted } : { results: bounded };
 }
 //# sourceMappingURL=search.js.map

@@ -21,7 +21,9 @@ import { handleStatus } from "./tools/status.js";
 const TOOLS = [
     {
         name: "status",
-        description: "Get full context: node index, stale nodes, current HEAD, and user preferences/facts. Automatically injected at session start by the hook, but can be called manually to refresh.",
+        description: "Get a bounded snapshot: node index, stale nodes, current HEAD, and project/global fact counts and keys " +
+            "(never fact or observation bodies). Automatically injected at session start by the hook, but can be " +
+            "called manually to refresh. For observation or fact content, call read(name), project_read(), or global_read().",
         inputSchema: {
             type: "object",
             properties: {},
@@ -42,7 +44,8 @@ const TOOLS = [
     },
     {
         name: "search",
-        description: "Search across nodes, observations, project facts, global facts, and edge reasons. Multi-word queries match any word and rank by relevance.",
+        description: "Search across nodes, observations, project facts, global facts, and edge reasons. Multi-word queries " +
+            "match any word and rank by relevance. Returns at most the top 20 results, each with a truncated snippet.",
         inputSchema: {
             type: "object",
             properties: {
@@ -232,12 +235,16 @@ const TOOLS = [
         inputSchema: {
             type: "object",
             properties: {
+                node_name: {
+                    type: "string",
+                    description: "Node the observation belongs to",
+                },
                 id: {
-                    type: "number",
+                    type: "string",
                     description: "Observation ID (from read response)",
                 },
             },
-            required: ["id"],
+            required: ["node_name", "id"],
         },
     },
     {
@@ -346,50 +353,50 @@ export function createServer(ctx) {
     return server;
 }
 function requireRepo(ctx) {
-    if (!ctx.repoDB || !ctx.repoRoot) {
+    if (!ctx.repoRoot) {
         throw new Error("Not in a git repository. Repo-specific tools are unavailable.");
     }
-    return { repoDB: ctx.repoDB, repoRoot: ctx.repoRoot };
+    return { repoRoot: ctx.repoRoot };
 }
 function dispatch(ctx, tool, args) {
     switch (tool) {
         case "global_read":
-            return handleGlobalRead(ctx.globalDB, args);
+            return handleGlobalRead(ctx.globalDir, args);
         case "global_write":
-            return handleGlobalWrite(ctx.globalDB, args);
+            return handleGlobalWrite(ctx.globalDir, args);
         case "global_delete":
-            return handleGlobalDelete(ctx.globalDB, args);
+            return handleGlobalDelete(ctx.globalDir, args);
         default: {
-            const { repoDB, repoRoot } = requireRepo(ctx);
+            const { repoRoot } = requireRepo(ctx);
             switch (tool) {
                 case "status":
-                    return handleStatus(repoDB, ctx.globalDB, repoRoot, args);
+                    return handleStatus(repoRoot, ctx.globalDir, args);
                 case "read":
-                    return handleRead(repoDB, args);
+                    return handleRead(repoRoot, args);
                 case "search":
-                    return handleSearch(repoDB, ctx.globalDB, args);
+                    return handleSearch(repoRoot, ctx.globalDir, args);
                 case "upsert_node":
-                    return handleUpsertNode(repoDB, args);
+                    return handleUpsertNode(repoRoot, args);
                 case "learn":
-                    return handleLearn(repoDB, args);
+                    return handleLearn(repoRoot, args);
                 case "link":
-                    return handleLink(repoDB, args);
+                    return handleLink(repoRoot, args);
                 case "unlink":
-                    return handleUnlink(repoDB, args);
+                    return handleUnlink(repoRoot, args);
                 case "stale":
-                    return handleStale(repoDB, repoRoot, args);
+                    return handleStale(repoRoot, args);
                 case "remove_observation":
-                    return handleRemoveObservation(repoDB, args);
+                    return handleRemoveObservation(repoRoot, args);
                 case "delete_node":
-                    return handleDeleteNode(repoDB, args);
+                    return handleDeleteNode(repoRoot, args);
                 case "batch":
-                    return handleBatch(repoDB, args);
+                    return handleBatch(repoRoot, args);
                 case "project_read":
-                    return handleProjectRead(repoDB, args);
+                    return handleProjectRead(repoRoot, args);
                 case "project_write":
-                    return handleProjectWrite(repoDB, args);
+                    return handleProjectWrite(repoRoot, args);
                 case "project_delete":
-                    return handleProjectDelete(repoDB, args);
+                    return handleProjectDelete(repoRoot, args);
                 default:
                     throw new Error(`Unknown tool: ${tool}`);
             }

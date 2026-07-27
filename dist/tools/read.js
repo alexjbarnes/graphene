@@ -1,41 +1,46 @@
-export function handleRead(db, args) {
+import { listNodes, readNode } from "../store.js";
+export function handleRead(repoRoot, args) {
     const name = args.name;
     if (!name) {
-        const rows = db
-            .prepare("SELECT name, type, summary FROM nodes ORDER BY name")
-            .all();
-        return { nodes: rows };
+        const nodes = listNodes(repoRoot).map((n) => {
+            const node = readNode(repoRoot, n);
+            return { name: node.name, type: node.type, summary: node.summary };
+        });
+        return { nodes };
     }
-    const node = db.prepare("SELECT * FROM nodes WHERE name = ?").get(name);
+    const node = readNode(repoRoot, name);
     if (!node)
         throw new Error(`Node not found: ${name}`);
-    const outgoing = db
-        .prepare(`SELECT e.to_node as node, e.type, e.reason, n.summary
-       FROM edges e
-       JOIN nodes n ON n.name = e.to_node
-       WHERE e.from_node = ?`)
-        .all(name);
-    const incoming = db
-        .prepare(`SELECT e.from_node as node, e.type, e.reason, n.summary
-       FROM edges e
-       JOIN nodes n ON n.name = e.from_node
-       WHERE e.to_node = ?`)
-        .all(name);
-    const observations = db
-        .prepare(`SELECT id, content, source, created_at FROM observations
-       WHERE node_name = ? ORDER BY created_at`)
-        .all(name);
+    const edges = node.edges.map((e) => {
+        const neighbor = readNode(repoRoot, e.to);
+        return { node: e.to, type: e.type, reason: e.reason, summary: neighbor?.summary ?? null };
+    });
+    // No reverse index exists on disk: finding dependents means scanning every
+    // other node's own outgoing edges for one pointing back at `name`.
+    const dependents = [];
+    for (const otherName of listNodes(repoRoot)) {
+        if (otherName === name)
+            continue;
+        const other = readNode(repoRoot, otherName);
+        if (!other)
+            continue;
+        for (const e of other.edges) {
+            if (e.to === name) {
+                dependents.push({ node: otherName, type: e.type, reason: e.reason, summary: other.summary });
+            }
+        }
+    }
     return {
         name: node.name,
         type: node.type,
         summary: node.summary,
-        entry_points: JSON.parse(node.entry_points || "[]"),
-        covers: JSON.parse(node.covers || "[]"),
+        entry_points: node.entry_points,
+        covers: node.covers,
         last_commit: node.last_commit,
-        metadata: JSON.parse(node.metadata || "{}"),
-        observations,
-        edges: outgoing,
-        dependents: incoming,
+        metadata: node.metadata,
+        observations: node.observations,
+        edges,
+        dependents,
     };
 }
 //# sourceMappingURL=read.js.map

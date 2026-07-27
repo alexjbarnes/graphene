@@ -1,8 +1,24 @@
-import type { GrapheneDatabase } from "../db.js";
+import { readNode, writeNode, type StoredNode } from "../store.js";
 import { BIDIRECTIONAL_EDGE_TYPES } from "../types.js";
 
+// Pure core shared with batch.ts: replaces the (to, type) edge if one already
+// exists (in place, so re-linking does not reshuffle edge order), else
+// appends it.
+export function upsertEdge(
+  node: StoredNode,
+  to: string,
+  type: string,
+  reason: string | null
+): StoredNode {
+  const idx = node.edges.findIndex((e) => e.to === to && e.type === type);
+  const edges = [...node.edges];
+  if (idx === -1) edges.push({ to, type, reason });
+  else edges[idx] = { to, type, reason };
+  return { ...node, edges };
+}
+
 export function handleLink(
-  db: GrapheneDatabase,
+  repoRoot: string,
   args: Record<string, unknown>
 ): { from: string; to: string; type: string; bidirectional: boolean } {
   const from = args.from as string;
@@ -14,26 +30,18 @@ export function handleLink(
     throw new Error("from, to, and type are required");
   }
 
-  const fromExists = db.prepare("SELECT 1 FROM nodes WHERE name = ?").get(from);
-  if (!fromExists) throw new Error(`Node not found: ${from}`);
+  const fromNode = readNode(repoRoot, from);
+  if (!fromNode) throw new Error(`Node not found: ${from}`);
 
-  const toExists = db.prepare("SELECT 1 FROM nodes WHERE name = ?").get(to);
-  if (!toExists) throw new Error(`Node not found: ${to}`);
-
-  const upsertEdge = db.prepare(
-    `INSERT INTO edges (from_node, to_node, type, reason)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(from_node, to_node, type) DO UPDATE SET reason = excluded.reason`
-  );
+  const toNode = readNode(repoRoot, to);
+  if (!toNode) throw new Error(`Node not found: ${to}`);
 
   const bidirectional = BIDIRECTIONAL_EDGE_TYPES.has(type);
 
-  db.transaction(() => {
-    upsertEdge.run(from, to, type, reason);
-    if (bidirectional) {
-      upsertEdge.run(to, from, type, reason);
-    }
-  })();
+  writeNode(repoRoot, upsertEdge(fromNode, to, type, reason));
+  if (bidirectional) {
+    writeNode(repoRoot, upsertEdge(toNode, from, type, reason));
+  }
 
   return { from, to, type, bidirectional };
 }

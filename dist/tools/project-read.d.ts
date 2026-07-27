@@ -1,13 +1,4 @@
-import type { GrapheneDatabase } from "../db.js";
-interface ProjectFact {
-    id: number;
-    category: string;
-    subject: string;
-    content: string;
-    created_at: string;
-    updated_at: string;
-}
-export declare function handleProjectRead(db: GrapheneDatabase, args: Record<string, unknown>): {
-    facts: ProjectFact[];
+import { type StoredFact } from "../store.js";
+export declare function handleProjectRead(repoRoot: string, args: Record<string, unknown>): {
+    facts: StoredFact[];
 };
-export {};
