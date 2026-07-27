@@ -8,5 +8,5 @@ interface StatusResult {
     global_facts: Fact[];
     observations_by_node: Record<string, string[]>;
 }
-export declare function handleStatus(repoDB: GrapheneDatabase, globalDB: GrapheneDatabase, repoRoot: string, _args: Record<string, unknown>): StatusResult;
+export declare function handleStatus(db: GrapheneDatabase, repoId: number, repoRoot: string, _args: Record<string, unknown>): StatusResult;
 export {};

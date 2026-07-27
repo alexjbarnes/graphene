@@ -1,35 +1,27 @@
-import { describe, it, expect, beforeEach, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { initSql, openMemoryDatabase, initRepoSchema, initGlobalSchema, type GrapheneDatabase } from "../src/db.js";
+import { type GrapheneDatabase } from "../src/db.js";
 import { createServer } from "../src/server.js";
-import { createTestGitRepo, type TestRepo } from "./helpers.js";
-
-beforeAll(async () => {
-  await initSql();
-});
+import { createTestRepoDb, createTestGitRepo, type TestRepo } from "./helpers.js";
 
 describe("server initialization", () => {
-  let repoDB: GrapheneDatabase;
-  let globalDB: GrapheneDatabase;
+  let db: GrapheneDatabase;
+  let repoId: number;
   let repo: TestRepo;
 
   beforeEach(() => {
-    repoDB = openMemoryDatabase();
-    initRepoSchema(repoDB);
-    globalDB = openMemoryDatabase();
-    initGlobalSchema(globalDB);
+    ({ db, repoId } = createTestRepoDb());
     repo = createTestGitRepo();
   });
 
   afterEach(() => {
-    repoDB.close();
-    globalDB.close();
+    db.close();
     repo.cleanup();
   });
 
   it("does not create CLAUDE.md when none exists", () => {
-    const server = createServer({ repoDB, globalDB, repoRoot: repo.path });
+    const server = createServer({ db, repoId, repoRoot: repo.path });
     const claudeMdPath = join(repo.path, "CLAUDE.md");
 
     expect(existsSync(claudeMdPath)).toBe(false);
@@ -45,7 +37,7 @@ describe("server initialization", () => {
       "# My Project\n\nCustom rules here.\n\n<!-- graphene -->\n## Graphene Context Graph\nold rules\n<!-- /graphene -->\n\n## My Section\n\nKeep this.\n"
     );
 
-    const server = createServer({ repoDB, globalDB, repoRoot: repo.path });
+    const server = createServer({ db, repoId, repoRoot: repo.path });
     server.oninitialized!();
 
     const content = readFileSync(claudeMdPath, "utf-8");
@@ -61,7 +53,7 @@ describe("server initialization", () => {
     const claudeMdPath = join(repo.path, "CLAUDE.md");
     writeFileSync(claudeMdPath, "<!-- graphene -->\n## Graphene Context Graph\nold rules\n<!-- /graphene -->\n");
 
-    const server = createServer({ repoDB, globalDB, repoRoot: repo.path });
+    const server = createServer({ db, repoId, repoRoot: repo.path });
     server.oninitialized!();
 
     expect(existsSync(claudeMdPath)).toBe(false);
@@ -71,7 +63,7 @@ describe("server initialization", () => {
     const claudeMdPath = join(repo.path, "CLAUDE.md");
     writeFileSync(claudeMdPath, "# Project\n\n<!-- graphene -->\n## Graphene Context Graph\nruns to end of file\n");
 
-    const server = createServer({ repoDB, globalDB, repoRoot: repo.path });
+    const server = createServer({ db, repoId, repoRoot: repo.path });
     server.oninitialized!();
 
     const content = readFileSync(claudeMdPath, "utf-8");
@@ -84,7 +76,7 @@ describe("server initialization", () => {
     const original = "# My Project\n\nJust my own rules.\n";
     writeFileSync(claudeMdPath, original);
 
-    const server = createServer({ repoDB, globalDB, repoRoot: repo.path });
+    const server = createServer({ db, repoId, repoRoot: repo.path });
     server.oninitialized!();
 
     expect(readFileSync(claudeMdPath, "utf-8")).toBe(original);
@@ -94,7 +86,7 @@ describe("server initialization", () => {
     const claudeMdPath = join(repo.path, "CLAUDE.md");
     writeFileSync(claudeMdPath, "# Project\n\n<!-- graphene -->\n## Graphene Context Graph\nold\n<!-- /graphene -->\n");
 
-    const server = createServer({ repoDB, globalDB, repoRoot: repo.path });
+    const server = createServer({ db, repoId, repoRoot: repo.path });
     server.oninitialized!();
     const first = readFileSync(claudeMdPath, "utf-8");
 

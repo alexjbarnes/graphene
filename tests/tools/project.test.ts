@@ -7,14 +7,15 @@ import { handleProjectDelete } from "../../src/tools/project-delete.js";
 
 describe("project tools", () => {
   let db: GrapheneDatabase;
+  let repoId: number;
 
   beforeEach(async () => {
-    db = await createTestRepoDb();
+    ({ db, repoId } = createTestRepoDb());
   });
 
   describe("project_write", () => {
     it("writes a project fact", () => {
-      const result = handleProjectWrite(db, {
+      const result = handleProjectWrite(db, repoId, {
         category: "convention",
         subject: "node-env",
         content: "NODE_ENV must not be set for next build",
@@ -26,8 +27,8 @@ describe("project tools", () => {
     });
 
     it("overwrites existing fact with same category+subject", () => {
-      handleProjectWrite(db, { category: "convention", subject: "lockfile", content: "Use Node 20" });
-      handleProjectWrite(db, { category: "convention", subject: "lockfile", content: "Use Node 22" });
+      handleProjectWrite(db, repoId, { category: "convention", subject: "lockfile", content: "Use Node 20" });
+      handleProjectWrite(db, repoId, { category: "convention", subject: "lockfile", content: "Use Node 22" });
 
       const facts = db.prepare("SELECT * FROM project_facts").all() as Array<Record<string, unknown>>;
       expect(facts).toHaveLength(1);
@@ -37,23 +38,23 @@ describe("project tools", () => {
 
   describe("project_read", () => {
     beforeEach(() => {
-      handleProjectWrite(db, { category: "convention", subject: "lockfile", content: "Regenerate on Node 22" });
-      handleProjectWrite(db, { category: "convention", subject: "node-env", content: "Must not be set" });
-      handleProjectWrite(db, { category: "decision", subject: "auth", content: "JWT not sessions" });
+      handleProjectWrite(db, repoId, { category: "convention", subject: "lockfile", content: "Regenerate on Node 22" });
+      handleProjectWrite(db, repoId, { category: "convention", subject: "node-env", content: "Must not be set" });
+      handleProjectWrite(db, repoId, { category: "decision", subject: "auth", content: "JWT not sessions" });
     });
 
     it("returns all project facts with no filters", () => {
-      const result = handleProjectRead(db, {});
+      const result = handleProjectRead(db, repoId, {});
       expect(result.facts).toHaveLength(3);
     });
 
     it("filters by category", () => {
-      const result = handleProjectRead(db, { category: "convention" });
+      const result = handleProjectRead(db, repoId, { category: "convention" });
       expect(result.facts).toHaveLength(2);
     });
 
     it("filters by both category and subject", () => {
-      const result = handleProjectRead(db, { category: "convention", subject: "lockfile" });
+      const result = handleProjectRead(db, repoId, { category: "convention", subject: "lockfile" });
       expect(result.facts).toHaveLength(1);
       expect(result.facts[0].content).toBe("Regenerate on Node 22");
     });
@@ -61,8 +62,8 @@ describe("project tools", () => {
 
   describe("project_delete", () => {
     it("deletes an existing project fact", () => {
-      handleProjectWrite(db, { category: "convention", subject: "lockfile", content: "Node 22" });
-      const result = handleProjectDelete(db, { category: "convention", subject: "lockfile" });
+      handleProjectWrite(db, repoId, { category: "convention", subject: "lockfile", content: "Node 22" });
+      const result = handleProjectDelete(db, repoId, { category: "convention", subject: "lockfile" });
       expect(result.deleted).toBe(true);
 
       const facts = db.prepare("SELECT * FROM project_facts").all();
@@ -70,7 +71,7 @@ describe("project tools", () => {
     });
 
     it("returns false for non-existent fact", () => {
-      const result = handleProjectDelete(db, { category: "convention", subject: "nope" });
+      const result = handleProjectDelete(db, repoId, { category: "convention", subject: "nope" });
       expect(result.deleted).toBe(false);
     });
   });

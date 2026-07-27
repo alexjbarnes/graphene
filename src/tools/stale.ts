@@ -4,12 +4,13 @@ import { getChangedFiles } from "../git.js";
 
 export function handleStale(
   db: GrapheneDatabase,
+  repoId: number,
   repoRoot: string,
   _args: Record<string, unknown>
 ): { stale_nodes: StaleNode[]; fresh_count: number; total_count: number } {
   const nodes = db
-    .prepare("SELECT name, covers, last_commit FROM nodes")
-    .all() as Array<{
+    .prepare("SELECT name, covers, last_commit FROM nodes WHERE repo_id = ?")
+    .all(repoId) as Array<{
     name: string;
     covers: string;
     last_commit: string | null;

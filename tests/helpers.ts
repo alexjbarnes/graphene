@@ -2,29 +2,29 @@ import { execSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import { initSql, openMemoryDatabase, initRepoSchema, initGlobalSchema, type GrapheneDatabase } from "../src/db.js";
+import { openMemoryDatabase, initSchema, ensureRepo, type GrapheneDatabase } from "../src/db.js";
 
-let initialized = false;
-
-async function ensureInit() {
-  if (!initialized) {
-    await initSql();
-    initialized = true;
-  }
+export interface TestRepoDb {
+  db: GrapheneDatabase;
+  repoId: number;
 }
 
-export async function createTestRepoDb(): Promise<GrapheneDatabase> {
-  await ensureInit();
+export function createTestDb(): GrapheneDatabase {
   const db = openMemoryDatabase();
-  initRepoSchema(db);
+  initSchema(db);
   return db;
 }
 
-export async function createTestGlobalDb(): Promise<GrapheneDatabase> {
-  await ensureInit();
-  const db = openMemoryDatabase();
-  initGlobalSchema(db);
-  return db;
+export function createTestRepoDb(): TestRepoDb {
+  const db = createTestDb();
+  const repoId = ensureRepo(db, "/test/repo", null);
+  return { db, repoId };
+}
+
+// Global facts live in the same schema, repo-less. Tests that only exercise
+// global tools take the raw db.
+export function createTestGlobalDb(): GrapheneDatabase {
+  return createTestDb();
 }
 
 export interface TestRepo {

@@ -4,5 +4,5 @@ interface UpsertResult {
     status: "created" | "updated";
     fields_updated?: string[];
 }
-export declare function handleUpsertNode(db: GrapheneDatabase, args: Record<string, unknown>): UpsertResult;
+export declare function handleUpsertNode(db: GrapheneDatabase, repoId: number, args: Record<string, unknown>): UpsertResult;
 export {};

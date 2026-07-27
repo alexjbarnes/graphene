@@ -6,14 +6,15 @@ import { handleUpsertNode } from "../../src/tools/upsert-node.js";
 
 describe("learn", () => {
   let db: GrapheneDatabase;
+  let repoId: number;
 
   beforeEach(async () => {
-    db = await createTestRepoDb();
-    handleUpsertNode(db, { name: "auth", type: "subsystem" });
+    ({ db, repoId } = createTestRepoDb());
+    handleUpsertNode(db, repoId, { name: "auth", type: "subsystem" });
   });
 
   it("appends an observation to a node", () => {
-    const result = handleLearn(db, {
+    const result = handleLearn(db, repoId, {
       node_name: "auth",
       content: "Rate limiting lives in middleware, not here",
     });
@@ -30,8 +31,8 @@ describe("learn", () => {
   });
 
   it("appends multiple observations without overwriting", () => {
-    handleLearn(db, { node_name: "auth", content: "First" });
-    handleLearn(db, { node_name: "auth", content: "Second" });
+    handleLearn(db, repoId, { node_name: "auth", content: "First" });
+    handleLearn(db, repoId, { node_name: "auth", content: "Second" });
 
     const obs = db
       .prepare("SELECT * FROM observations WHERE node_name = ?")
@@ -41,12 +42,12 @@ describe("learn", () => {
 
   it("fails on non-existent node", () => {
     expect(() =>
-      handleLearn(db, { node_name: "nope", content: "something" })
+      handleLearn(db, repoId, { node_name: "nope", content: "something" })
     ).toThrow("Node not found: nope");
   });
 
   it("stores optional source field", () => {
-    handleLearn(db, {
+    handleLearn(db, repoId, {
       node_name: "auth",
       content: "Discovered during debugging",
       source: "session-2024-03-15",

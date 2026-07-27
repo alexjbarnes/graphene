@@ -12,20 +12,20 @@ interface StatusResult {
 }
 
 export function handleStatus(
-  repoDB: GrapheneDatabase,
-  globalDB: GrapheneDatabase,
+  db: GrapheneDatabase,
+  repoId: number,
   repoRoot: string,
   _args: Record<string, unknown>
 ): StatusResult {
   const head = getHead(repoRoot);
 
-  const nodes = repoDB
-    .prepare("SELECT name, type, summary FROM nodes ORDER BY name")
-    .all() as unknown as IndexEntry[];
+  const nodes = db
+    .prepare("SELECT name, type, summary FROM nodes WHERE repo_id = ? ORDER BY name")
+    .all(repoId) as unknown as IndexEntry[];
 
-  const allNodes = repoDB
-    .prepare("SELECT name, covers, last_commit FROM nodes")
-    .all() as Array<{
+  const allNodes = db
+    .prepare("SELECT name, covers, last_commit FROM nodes WHERE repo_id = ?")
+    .all(repoId) as Array<{
     name: string;
     covers: string;
     last_commit: string | null;
@@ -48,17 +48,17 @@ export function handleStatus(
     }
   }
 
-  const projectFacts = repoDB
-    .prepare("SELECT * FROM project_facts ORDER BY category, subject")
-    .all() as unknown as Fact[];
+  const projectFacts = db
+    .prepare("SELECT * FROM project_facts WHERE repo_id = ? ORDER BY category, subject")
+    .all(repoId) as unknown as Fact[];
 
-  const globalFacts = globalDB
+  const globalFacts = db
     .prepare("SELECT * FROM facts ORDER BY category, subject")
     .all() as unknown as Fact[];
 
-  const observations = repoDB
-    .prepare("SELECT node_name, content FROM observations ORDER BY created_at DESC")
-    .all() as unknown as Array<{ node_name: string; content: string }>;
+  const observations = db
+    .prepare("SELECT node_name, content FROM observations WHERE repo_id = ? ORDER BY created_at DESC")
+    .all(repoId) as unknown as Array<{ node_name: string; content: string }>;
 
   const observationsByNode: Record<string, string[]> = {};
   for (const obs of observations) {

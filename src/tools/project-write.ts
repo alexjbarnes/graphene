@@ -2,6 +2,7 @@ import type { GrapheneDatabase } from "../db.js";
 
 export function handleProjectWrite(
   db: GrapheneDatabase,
+  repoId: number,
   args: Record<string, unknown>
 ): { category: string; subject: string } {
   const category = args.category as string;
@@ -13,11 +14,11 @@ export function handleProjectWrite(
   }
 
   db.prepare(
-    `INSERT INTO project_facts (category, subject, content)
-     VALUES (?, ?, ?)
-     ON CONFLICT(category, subject)
+    `INSERT INTO project_facts (repo_id, category, subject, content)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(repo_id, category, subject)
      DO UPDATE SET content = excluded.content, updated_at = datetime('now')`
-  ).run(category, subject, content);
+  ).run(repoId, category, subject, content);
 
   return { category, subject };
 }

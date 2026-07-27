@@ -20,6 +20,7 @@ const VALID_KEYS = new Set(["nodes", "edges", "observations"]);
 
 export function handleBatch(
   db: GrapheneDatabase,
+  repoId: number,
   args: Record<string, unknown>
 ): BatchResult {
   const unknown = Object.keys(args).filter((k) => !VALID_KEYS.has(k));
@@ -44,7 +45,7 @@ export function handleBatch(
   db.transaction(() => {
     if (params.nodes) {
       for (const node of params.nodes) {
-        const r = handleUpsertNode(db, node);
+        const r = handleUpsertNode(db, repoId, node);
         if (r.status === "created") result.nodes_created++;
         else result.nodes_updated++;
       }
@@ -52,14 +53,14 @@ export function handleBatch(
 
     if (params.edges) {
       for (const edge of params.edges) {
-        handleLink(db, edge);
+        handleLink(db, repoId, edge);
         result.edges_created++;
       }
     }
 
     if (params.observations) {
       for (const obs of params.observations) {
-        handleLearn(db, obs);
+        handleLearn(db, repoId, obs);
         result.observations_added++;
       }
     }

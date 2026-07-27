@@ -17,42 +17,36 @@ function getRepoRoot() {
   }
 }
 
+function dbPath() {
+  return join(homedir(), ".graphene", "graphene.db");
+}
+
 async function getStatus(repoRoot) {
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || join(import.meta.dirname, "..");
-  const { initSql, openDatabase, initRepoSchema, initGlobalSchema } =
+  const { openDatabase, initSchema, ensureRepo } =
     await import(join(pluginRoot, "dist", "db.js"));
   const { handleStatus } = await import(join(pluginRoot, "dist", "tools", "status.js"));
 
-  await initSql();
-
-  const repoDbPath = join(repoRoot, ".graphene", "context.db");
-  const globalDbPath = join(homedir(), ".graphene", "global.db");
-
-  const repoDB = openDatabase(repoDbPath);
-  initRepoSchema(repoDB);
-  const globalDB = openDatabase(globalDbPath);
-  initGlobalSchema(globalDB);
+  const db = openDatabase(dbPath());
+  initSchema(db);
 
   try {
-    return handleStatus(repoDB, globalDB, repoRoot, {});
+    const repoId = ensureRepo(db, repoRoot, null);
+    return handleStatus(db, repoId, repoRoot, {});
   } finally {
-    repoDB.close();
-    globalDB.close();
+    db.close();
   }
 }
 
 async function getAffectedNodes(repoRoot) {
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || join(import.meta.dirname, "..");
-  const { initSql, openDatabase, initRepoSchema } =
+  const { openDatabase, initSchema } =
     await import(join(pluginRoot, "dist", "db.js"));
 
-  const repoDbPath = join(repoRoot, ".graphene", "context.db");
-  if (!existsSync(repoDbPath)) return [];
+  if (!existsSync(dbPath())) return [];
 
-  await initSql();
-
-  const repoDB = openDatabase(repoDbPath);
-  initRepoSchema(repoDB);
+  const db = openDatabase(dbPath());
+  initSchema(db);
 
   try {
     let committedFiles;
@@ -68,7 +62,11 @@ async function getAffectedNodes(repoRoot) {
 
     if (committedFiles.length === 0) return [];
 
-    const nodes = repoDB.prepare("SELECT name, covers FROM nodes").all();
+    const repo = db.prepare("SELECT id FROM repos WHERE root_path = ?").get(repoRoot);
+    if (!repo) return [];
+    const nodes = db
+      .prepare("SELECT name, covers FROM nodes WHERE repo_id = ?")
+      .all(repo.id);
 
     const affected = [];
     for (const node of nodes) {
@@ -86,7 +84,7 @@ async function getAffectedNodes(repoRoot) {
 
     return affected;
   } finally {
-    repoDB.close();
+    db.close();
   }
 }
 

@@ -51,11 +51,11 @@ A fact is keyed by `category` plus `subject`, and that pair is unique. Writing t
 - `preference` / `tests`: "no mocks in unit tests, use the in-memory database helper"
 - `decision` / `auth`: "we chose session cookies over JWT, see the ADR in docs/"
 
-Project facts are stored in the repo's `.graphene/context.db`, alongside the nodes.
+Project facts are stored alongside the nodes, scoped to the repo by `repo_id`.
 
 ## Global facts
 
-A global fact is the same shape as a project fact, but it lives in `~/.graphene/global.db` and applies across every repo. Use it for things about you, the user, that do not change per project:
+A global fact is the same shape as a project fact, but it carries no repo scope and applies across every repo. It lives in the same `~/.graphene/graphene.db` file as everything else. Use it for things about you, the user, that do not change per project:
 
 - `preference` / `communication`: "be terse, skip the preamble"
 - `expertise` / `go`: "assume deep Go proficiency, do not explain the basics"

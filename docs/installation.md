@@ -45,22 +45,22 @@ The server picks up the current working directory's git repo on startup. The hoo
 
 ## Data locations
 
-Graphene writes to two places:
+Graphene keeps everything in one SQLite file:
 
-- **Per repo**: `<repo>/.graphene/context.db` holds that repo's nodes, edges, observations, and project facts.
-- **Per user**: `~/.graphene/global.db` holds cross-repo facts. `~/.graphene/sessions/` holds the hook's per-session state files.
+- **`~/.graphene/graphene.db`**: every repo's nodes, edges, observations, and project facts, plus your cross-repo global facts. Each repo is a row in a `repos` table, and repo-scoped data carries that repo's id. Global facts carry no repo.
+- **`~/.graphene/sessions/`**: the hook's per-session state files.
 
-The database is SQLite, run in-process through `sql.js` (SQLite compiled to WebAssembly). The whole database lives in memory while the server runs and is flushed to disk on every write that is not inside a transaction, and once at the end of a transaction. There is no separate database process.
+The engine is `better-sqlite3` (native SQLite, run in-process). It reads and writes the file directly under WAL, so concurrent sessions see each other's committed writes rather than a snapshot frozen at startup. There is no separate database process.
+
+Earlier versions kept one file per repo at `<repo>/.graphene/context.db` and a separate `~/.graphene/global.db`. On first run the server imports each legacy file into `graphene.db` and renames the original to `.migrated`. The import runs once and loses nothing.
 
 ## Is the graph committed?
 
-By default, no. The repo's `.gitignore` excludes `.graphene/` and `*.db`, so the graph stays local to each clone. Each developer or agent builds and maintains their own.
-
-To share one graph across a team, remove `.graphene/` from `.gitignore` and commit `context.db`. Weigh it before you do: a shared graph means shared, current context for everyone, but the binary SQLite file produces opaque diffs and merge conflicts that git cannot resolve cleanly. Most setups are better off with each clone running `/graphene:init` once.
+No. The graph lives under your home directory, not in the repo, so it is never staged, committed, or shown in a diff. Each developer or agent builds and maintains their own.
 
 ## Configuration
 
-Graphene has no environment variables of its own. The only external input is `CLAUDE_PLUGIN_ROOT`, which Claude Code sets for the plugin so the hooks can find the compiled `dist/`. Paths to the databases are derived from the repo root and the home directory, not configured.
+Graphene has no environment variables of its own. The only external input is `CLAUDE_PLUGIN_ROOT`, which Claude Code sets for the plugin so the hooks can find the compiled `dist/`. The database path is derived from the home directory; each repo is identified inside the file by its root path, not configured.
 
 ## Development
 

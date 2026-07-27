@@ -11,14 +11,14 @@ interface ProjectFact {
 
 export function handleProjectRead(
   db: GrapheneDatabase,
+  repoId: number,
   args: Record<string, unknown>
 ): { facts: ProjectFact[] } {
   const category = args.category as string | undefined;
   const subject = args.subject as string | undefined;
 
-  let sql = "SELECT * FROM project_facts";
-  const conditions: string[] = [];
-  const params: string[] = [];
+  const conditions: string[] = ["repo_id = ?"];
+  const params: (string | number)[] = [repoId];
 
   if (category) {
     conditions.push("category = ?");
@@ -29,11 +29,10 @@ export function handleProjectRead(
     params.push(subject);
   }
 
-  if (conditions.length > 0) {
-    sql += " WHERE " + conditions.join(" AND ");
-  }
-
-  sql += " ORDER BY category, subject";
+  const sql =
+    "SELECT * FROM project_facts WHERE " +
+    conditions.join(" AND ") +
+    " ORDER BY category, subject";
 
   const facts = db.prepare(sql).all(...params) as unknown as ProjectFact[];
   return { facts };

@@ -7,16 +7,17 @@ import { handleUpsertNode } from "../../src/tools/upsert-node.js";
 
 describe("link", () => {
   let db: GrapheneDatabase;
+  let repoId: number;
 
   beforeEach(async () => {
-    db = await createTestRepoDb();
-    handleUpsertNode(db, { name: "auth", type: "subsystem" });
-    handleUpsertNode(db, { name: "db", type: "module" });
-    handleUpsertNode(db, { name: "session", type: "subsystem" });
+    ({ db, repoId } = createTestRepoDb());
+    handleUpsertNode(db, repoId, { name: "auth", type: "subsystem" });
+    handleUpsertNode(db, repoId, { name: "db", type: "module" });
+    handleUpsertNode(db, repoId, { name: "session", type: "subsystem" });
   });
 
   it("creates a directional edge", () => {
-    const result = handleLink(db, {
+    const result = handleLink(db, repoId, {
       from: "auth",
       to: "db",
       type: "depends_on",
@@ -32,7 +33,7 @@ describe("link", () => {
   });
 
   it("creates bidirectional edges for related_to", () => {
-    const result = handleLink(db, {
+    const result = handleLink(db, repoId, {
       from: "auth",
       to: "session",
       type: "related_to",
@@ -46,19 +47,19 @@ describe("link", () => {
   });
 
   it("creates bidirectional edges for mirrors", () => {
-    handleLink(db, { from: "auth", to: "session", type: "mirrors" });
+    handleLink(db, repoId, { from: "auth", to: "session", type: "mirrors" });
     const edges = db.prepare("SELECT * FROM edges").all();
     expect(edges).toHaveLength(2);
   });
 
   it("updates reason on re-link", () => {
-    handleLink(db, {
+    handleLink(db, repoId, {
       from: "auth",
       to: "db",
       type: "depends_on",
       reason: "original",
     });
-    handleLink(db, {
+    handleLink(db, repoId, {
       from: "auth",
       to: "db",
       type: "depends_on",
@@ -72,30 +73,31 @@ describe("link", () => {
 
   it("fails if source node does not exist", () => {
     expect(() =>
-      handleLink(db, { from: "nope", to: "db", type: "depends_on" })
+      handleLink(db, repoId, { from: "nope", to: "db", type: "depends_on" })
     ).toThrow("Node not found: nope");
   });
 
   it("fails if target node does not exist", () => {
     expect(() =>
-      handleLink(db, { from: "auth", to: "nope", type: "depends_on" })
+      handleLink(db, repoId, { from: "auth", to: "nope", type: "depends_on" })
     ).toThrow("Node not found: nope");
   });
 });
 
 describe("unlink", () => {
   let db: GrapheneDatabase;
+  let repoId: number;
 
   beforeEach(async () => {
-    db = await createTestRepoDb();
-    handleUpsertNode(db, { name: "auth", type: "subsystem" });
-    handleUpsertNode(db, { name: "db", type: "module" });
-    handleUpsertNode(db, { name: "session", type: "subsystem" });
+    ({ db, repoId } = createTestRepoDb());
+    handleUpsertNode(db, repoId, { name: "auth", type: "subsystem" });
+    handleUpsertNode(db, repoId, { name: "db", type: "module" });
+    handleUpsertNode(db, repoId, { name: "session", type: "subsystem" });
   });
 
   it("removes a specific edge type", () => {
-    handleLink(db, { from: "auth", to: "db", type: "depends_on" });
-    const result = handleUnlink(db, {
+    handleLink(db, repoId, { from: "auth", to: "db", type: "depends_on" });
+    const result = handleUnlink(db, repoId, {
       from: "auth",
       to: "db",
       type: "depends_on",
@@ -107,10 +109,10 @@ describe("unlink", () => {
   });
 
   it("removes all edges between nodes when no type specified", () => {
-    handleLink(db, { from: "auth", to: "db", type: "depends_on" });
-    handleLink(db, { from: "auth", to: "db", type: "related_to" });
+    handleLink(db, repoId, { from: "auth", to: "db", type: "depends_on" });
+    handleLink(db, repoId, { from: "auth", to: "db", type: "related_to" });
 
-    const result = handleUnlink(db, { from: "auth", to: "db" });
+    const result = handleUnlink(db, repoId, { from: "auth", to: "db" });
     expect(result.removed).toBeGreaterThan(0);
 
     const edges = db.prepare("SELECT * FROM edges").all();
@@ -118,12 +120,12 @@ describe("unlink", () => {
   });
 
   it("removes both directions for bidirectional types", () => {
-    handleLink(db, { from: "auth", to: "session", type: "related_to" });
+    handleLink(db, repoId, { from: "auth", to: "session", type: "related_to" });
 
     const before = db.prepare("SELECT * FROM edges").all();
     expect(before).toHaveLength(2);
 
-    const result = handleUnlink(db, {
+    const result = handleUnlink(db, repoId, {
       from: "auth",
       to: "session",
       type: "related_to",

@@ -16,7 +16,7 @@ Three things follow:
 2. **Less wasted exploration.** Each node carries `entry_points` and observations, so the agent jumps straight to the files that matter instead of grepping its way back to them.
 3. **Recording happens, instead of being hoped for.** The enforcement layer turns "you should update the graph" into a prompt the agent sees at the moments that matter: first tool call, and every commit.
 
-The graph lives in your repo at `.graphene/context.db`. User-level preferences that span repos live in `~/.graphene/global.db`.
+The graph lives in a single SQLite file at `~/.graphene/graphene.db`, partitioned by repo. User-level preferences that span repos live in the same file, unscoped.
 
 ## Quick start
 
@@ -49,7 +49,7 @@ See [Installation](docs/installation.md) for the standalone MCP setup and data l
 
 Graphene is two layers.
 
-The **MCP server** stores and serves the graph. It exposes 17 tools across reading (`status`, `read`, `search`, `stale`), recording (`learn`, `upsert_node`, `link`, `batch`, `project_write`, `global_write`), and cleanup. Data sits in SQLite, run in-process through `sql.js`. See [Tools](docs/tools.md) and [Concepts](docs/concepts.md).
+The **MCP server** stores and serves the graph. It exposes 17 tools across reading (`status`, `read`, `search`, `stale`), recording (`learn`, `upsert_node`, `link`, `batch`, `project_write`, `global_write`), and cleanup. Data sits in one SQLite file, run in-process through `better-sqlite3`. See [Tools](docs/tools.md) and [Concepts](docs/concepts.md).
 
 The **enforcement layer** is a set of Claude Code hooks. On the first tool call of a session, a `PreToolUse` hook injects the current graph. After every `git commit`, a `PostToolUse` hook lists the nodes whose covered files changed and tells the agent to update them. See [Enforcement](docs/enforcement.md).
 

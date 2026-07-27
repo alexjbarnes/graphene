@@ -1,12 +1,12 @@
 import { getChangedFiles, getHead } from "../git.js";
-export function handleStatus(repoDB, globalDB, repoRoot, _args) {
+export function handleStatus(db, repoId, repoRoot, _args) {
     const head = getHead(repoRoot);
-    const nodes = repoDB
-        .prepare("SELECT name, type, summary FROM nodes ORDER BY name")
-        .all();
-    const allNodes = repoDB
-        .prepare("SELECT name, covers, last_commit FROM nodes")
-        .all();
+    const nodes = db
+        .prepare("SELECT name, type, summary FROM nodes WHERE repo_id = ? ORDER BY name")
+        .all(repoId);
+    const allNodes = db
+        .prepare("SELECT name, covers, last_commit FROM nodes WHERE repo_id = ?")
+        .all(repoId);
     const staleNodes = [];
     for (const node of allNodes) {
         const covers = JSON.parse(node.covers || "[]");
@@ -21,15 +21,15 @@ export function handleStatus(repoDB, globalDB, repoRoot, _args) {
             staleNodes.push({ name: node.name, reason: "changed", changed_files: changed });
         }
     }
-    const projectFacts = repoDB
-        .prepare("SELECT * FROM project_facts ORDER BY category, subject")
-        .all();
-    const globalFacts = globalDB
+    const projectFacts = db
+        .prepare("SELECT * FROM project_facts WHERE repo_id = ? ORDER BY category, subject")
+        .all(repoId);
+    const globalFacts = db
         .prepare("SELECT * FROM facts ORDER BY category, subject")
         .all();
-    const observations = repoDB
-        .prepare("SELECT node_name, content FROM observations ORDER BY created_at DESC")
-        .all();
+    const observations = db
+        .prepare("SELECT node_name, content FROM observations WHERE repo_id = ? ORDER BY created_at DESC")
+        .all(repoId);
     const observationsByNode = {};
     for (const obs of observations) {
         if (!observationsByNode[obs.node_name])

@@ -5,5 +5,5 @@ interface BatchResult {
     edges_created: number;
     observations_added: number;
 }
-export declare function handleBatch(db: GrapheneDatabase, args: Record<string, unknown>): BatchResult;
+export declare function handleBatch(db: GrapheneDatabase, repoId: number, args: Record<string, unknown>): BatchResult;
 export {};

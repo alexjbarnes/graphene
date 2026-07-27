@@ -9,14 +9,15 @@ import { handleRemoveObservation } from "../../src/tools/remove-observation.js";
 
 describe("delete_node", () => {
   let db: GrapheneDatabase;
+  let repoId: number;
 
   beforeEach(async () => {
-    db = await createTestRepoDb();
+    ({ db, repoId } = createTestRepoDb());
   });
 
   it("deletes a node", () => {
-    handleUpsertNode(db, { name: "auth", type: "subsystem" });
-    const result = handleDeleteNode(db, { name: "auth" });
+    handleUpsertNode(db, repoId, { name: "auth", type: "subsystem" });
+    const result = handleDeleteNode(db, repoId, { name: "auth" });
     expect(result.deleted).toBe(true);
 
     const row = db.prepare("SELECT * FROM nodes WHERE name = ?").get("auth");
@@ -24,48 +25,49 @@ describe("delete_node", () => {
   });
 
   it("cascades to edges", () => {
-    handleUpsertNode(db, { name: "auth", type: "subsystem" });
-    handleUpsertNode(db, { name: "db", type: "module" });
-    handleLink(db, { from: "auth", to: "db", type: "depends_on" });
+    handleUpsertNode(db, repoId, { name: "auth", type: "subsystem" });
+    handleUpsertNode(db, repoId, { name: "db", type: "module" });
+    handleLink(db, repoId, { from: "auth", to: "db", type: "depends_on" });
 
-    handleDeleteNode(db, { name: "auth" });
+    handleDeleteNode(db, repoId, { name: "auth" });
 
     const edges = db.prepare("SELECT * FROM edges").all();
     expect(edges).toHaveLength(0);
   });
 
   it("cascades to observations", () => {
-    handleUpsertNode(db, { name: "auth", type: "subsystem" });
-    handleLearn(db, { node_name: "auth", content: "test observation" });
+    handleUpsertNode(db, repoId, { name: "auth", type: "subsystem" });
+    handleLearn(db, repoId, { node_name: "auth", content: "test observation" });
 
-    handleDeleteNode(db, { name: "auth" });
+    handleDeleteNode(db, repoId, { name: "auth" });
 
     const obs = db.prepare("SELECT * FROM observations").all();
     expect(obs).toHaveLength(0);
   });
 
   it("returns false for non-existent node", () => {
-    const result = handleDeleteNode(db, { name: "nope" });
+    const result = handleDeleteNode(db, repoId, { name: "nope" });
     expect(result.deleted).toBe(false);
   });
 });
 
 describe("remove_observation", () => {
   let db: GrapheneDatabase;
+  let repoId: number;
 
   beforeEach(async () => {
-    db = await createTestRepoDb();
-    handleUpsertNode(db, { name: "auth", type: "subsystem" });
+    ({ db, repoId } = createTestRepoDb());
+    handleUpsertNode(db, repoId, { name: "auth", type: "subsystem" });
   });
 
   it("removes a specific observation by ID", () => {
-    const { id } = handleLearn(db, {
+    const { id } = handleLearn(db, repoId, {
       node_name: "auth",
       content: "wrong observation",
     });
-    handleLearn(db, { node_name: "auth", content: "correct observation" });
+    handleLearn(db, repoId, { node_name: "auth", content: "correct observation" });
 
-    const result = handleRemoveObservation(db, { id });
+    const result = handleRemoveObservation(db, repoId, { id });
     expect(result.removed).toBe(true);
 
     const obs = db.prepare("SELECT * FROM observations").all() as Array<Record<string, unknown>>;
@@ -74,7 +76,7 @@ describe("remove_observation", () => {
   });
 
   it("returns false for non-existent ID", () => {
-    const result = handleRemoveObservation(db, { id: 999 });
+    const result = handleRemoveObservation(db, repoId, { id: 999 });
     expect(result.removed).toBe(false);
   });
 });

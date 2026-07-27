@@ -3,20 +3,21 @@ import type { IndexEntry, NodeDetail, EdgeWithNeighbor } from "../types.js";
 
 export function handleRead(
   db: GrapheneDatabase,
+  repoId: number,
   args: Record<string, unknown>
 ): { nodes: IndexEntry[] } | NodeDetail {
   const name = args.name as string | undefined;
 
   if (!name) {
     const rows = db
-      .prepare("SELECT name, type, summary FROM nodes ORDER BY name")
-      .all() as unknown as IndexEntry[];
+      .prepare("SELECT name, type, summary FROM nodes WHERE repo_id = ? ORDER BY name")
+      .all(repoId) as unknown as IndexEntry[];
     return { nodes: rows };
   }
 
-  const node = db.prepare("SELECT * FROM nodes WHERE name = ?").get(name) as
-    | Record<string, unknown>
-    | undefined;
+  const node = db
+    .prepare("SELECT * FROM nodes WHERE repo_id = ? AND name = ?")
+    .get(repoId, name) as Record<string, unknown> | undefined;
 
   if (!node) throw new Error(`Node not found: ${name}`);
 
@@ -24,26 +25,26 @@ export function handleRead(
     .prepare(
       `SELECT e.to_node as node, e.type, e.reason, n.summary
        FROM edges e
-       JOIN nodes n ON n.name = e.to_node
-       WHERE e.from_node = ?`
+       JOIN nodes n ON n.repo_id = e.repo_id AND n.name = e.to_node
+       WHERE e.repo_id = ? AND e.from_node = ?`
     )
-    .all(name) as unknown as EdgeWithNeighbor[];
+    .all(repoId, name) as unknown as EdgeWithNeighbor[];
 
   const incoming = db
     .prepare(
       `SELECT e.from_node as node, e.type, e.reason, n.summary
        FROM edges e
-       JOIN nodes n ON n.name = e.from_node
-       WHERE e.to_node = ?`
+       JOIN nodes n ON n.repo_id = e.repo_id AND n.name = e.from_node
+       WHERE e.repo_id = ? AND e.to_node = ?`
     )
-    .all(name) as unknown as EdgeWithNeighbor[];
+    .all(repoId, name) as unknown as EdgeWithNeighbor[];
 
   const observations = db
     .prepare(
       `SELECT id, content, source, created_at FROM observations
-       WHERE node_name = ? ORDER BY created_at`
+       WHERE repo_id = ? AND node_name = ? ORDER BY created_at`
     )
-    .all(name) as Array<{
+    .all(repoId, name) as Array<{
     id: number;
     content: string;
     source: string | null;

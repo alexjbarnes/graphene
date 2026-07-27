@@ -346,50 +346,51 @@ export function createServer(ctx) {
     return server;
 }
 function requireRepo(ctx) {
-    if (!ctx.repoDB || !ctx.repoRoot) {
+    if (ctx.repoId == null || !ctx.repoRoot) {
         throw new Error("Not in a git repository. Repo-specific tools are unavailable.");
     }
-    return { repoDB: ctx.repoDB, repoRoot: ctx.repoRoot };
+    return { repoId: ctx.repoId, repoRoot: ctx.repoRoot };
 }
 function dispatch(ctx, tool, args) {
+    const db = ctx.db;
     switch (tool) {
         case "global_read":
-            return handleGlobalRead(ctx.globalDB, args);
+            return handleGlobalRead(db, args);
         case "global_write":
-            return handleGlobalWrite(ctx.globalDB, args);
+            return handleGlobalWrite(db, args);
         case "global_delete":
-            return handleGlobalDelete(ctx.globalDB, args);
+            return handleGlobalDelete(db, args);
         default: {
-            const { repoDB, repoRoot } = requireRepo(ctx);
+            const { repoId, repoRoot } = requireRepo(ctx);
             switch (tool) {
                 case "status":
-                    return handleStatus(repoDB, ctx.globalDB, repoRoot, args);
+                    return handleStatus(db, repoId, repoRoot, args);
                 case "read":
-                    return handleRead(repoDB, args);
+                    return handleRead(db, repoId, args);
                 case "search":
-                    return handleSearch(repoDB, ctx.globalDB, args);
+                    return handleSearch(db, repoId, args);
                 case "upsert_node":
-                    return handleUpsertNode(repoDB, args);
+                    return handleUpsertNode(db, repoId, args);
                 case "learn":
-                    return handleLearn(repoDB, args);
+                    return handleLearn(db, repoId, args);
                 case "link":
-                    return handleLink(repoDB, args);
+                    return handleLink(db, repoId, args);
                 case "unlink":
-                    return handleUnlink(repoDB, args);
+                    return handleUnlink(db, repoId, args);
                 case "stale":
-                    return handleStale(repoDB, repoRoot, args);
+                    return handleStale(db, repoId, repoRoot, args);
                 case "remove_observation":
-                    return handleRemoveObservation(repoDB, args);
+                    return handleRemoveObservation(db, repoId, args);
                 case "delete_node":
-                    return handleDeleteNode(repoDB, args);
+                    return handleDeleteNode(db, repoId, args);
                 case "batch":
-                    return handleBatch(repoDB, args);
+                    return handleBatch(db, repoId, args);
                 case "project_read":
-                    return handleProjectRead(repoDB, args);
+                    return handleProjectRead(db, repoId, args);
                 case "project_write":
-                    return handleProjectWrite(repoDB, args);
+                    return handleProjectWrite(db, repoId, args);
                 case "project_delete":
-                    return handleProjectDelete(repoDB, args);
+                    return handleProjectDelete(db, repoId, args);
                 default:
                     throw new Error(`Unknown tool: ${tool}`);
             }

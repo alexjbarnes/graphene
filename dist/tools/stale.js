@@ -1,8 +1,8 @@
 import { getChangedFiles } from "../git.js";
-export function handleStale(db, repoRoot, _args) {
+export function handleStale(db, repoId, repoRoot, _args) {
     const nodes = db
-        .prepare("SELECT name, covers, last_commit FROM nodes")
-        .all();
+        .prepare("SELECT name, covers, last_commit FROM nodes WHERE repo_id = ?")
+        .all(repoId);
     const staleNodes = [];
     let freshCount = 0;
     for (const node of nodes) {

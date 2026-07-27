@@ -89,22 +89,24 @@ function normalizeArgs(args: Record<string, unknown>): Record<string, unknown> {
 
 export function handleUpsertNode(
   db: GrapheneDatabase,
+  repoId: number,
   args: Record<string, unknown>
 ): UpsertResult {
   const params = normalizeArgs(args) as unknown as UpsertNodeParams;
   if (!params.name) throw new Error("name is required");
 
   const existing = db
-    .prepare("SELECT name, metadata FROM nodes WHERE name = ?")
-    .get(params.name) as { name: string; metadata: string } | undefined;
+    .prepare("SELECT name, metadata FROM nodes WHERE repo_id = ? AND name = ?")
+    .get(repoId, params.name) as { name: string; metadata: string } | undefined;
 
   if (!existing) {
     if (!params.type) throw new Error("type is required when creating a node");
 
     db.prepare(
-      `INSERT INTO nodes (name, type, summary, entry_points, covers, last_commit, metadata)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO nodes (repo_id, name, type, summary, entry_points, covers, last_commit, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
+      repoId,
       params.name,
       params.type,
       params.summary ?? null,
@@ -163,8 +165,8 @@ export function handleUpsertNode(
   }
 
   updates.push("updated_at = datetime('now')");
-  values.push(params.name);
-  db.prepare(`UPDATE nodes SET ${updates.join(", ")} WHERE name = ?`).run(
+  values.push(repoId, params.name);
+  db.prepare(`UPDATE nodes SET ${updates.join(", ")} WHERE repo_id = ? AND name = ?`).run(
     ...values
   );
 

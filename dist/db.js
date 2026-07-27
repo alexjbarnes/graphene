@@ -1,162 +1,37 @@
-import initSqlJs from "sql.js";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import Database from "better-sqlite3";
+import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-let SQL;
-function wrapDatabase(inner, filePath) {
-    let txDepth = 0;
-    function save() {
-        if (!filePath)
-            return;
-        const data = inner.export();
-        writeFileSync(filePath, Buffer.from(data));
-    }
-    const db = {
-        prepare(sql) {
-            return {
-                get(...params) {
-                    const stmt = inner.prepare(sql);
-                    try {
-                        stmt.bind(params.length ? params : undefined);
-                        if (!stmt.step())
-                            return undefined;
-                        const cols = stmt.getColumnNames();
-                        const vals = stmt.get();
-                        const row = {};
-                        for (let i = 0; i < cols.length; i++)
-                            row[cols[i]] = vals[i];
-                        return row;
-                    }
-                    finally {
-                        stmt.free();
-                    }
-                },
-                all(...params) {
-                    const stmt = inner.prepare(sql);
-                    try {
-                        stmt.bind(params.length ? params : undefined);
-                        const rows = [];
-                        while (stmt.step()) {
-                            const cols = stmt.getColumnNames();
-                            const vals = stmt.get();
-                            const row = {};
-                            for (let i = 0; i < cols.length; i++)
-                                row[cols[i]] = vals[i];
-                            rows.push(row);
-                        }
-                        return rows;
-                    }
-                    finally {
-                        stmt.free();
-                    }
-                },
-                run(...params) {
-                    inner.run(sql, params.length ? params : undefined);
-                    const changes = inner.getRowsModified();
-                    const result = inner.exec("SELECT last_insert_rowid()");
-                    const lastInsertRowid = result.length > 0 ? result[0].values[0][0] : 0;
-                    if (txDepth === 0)
-                        save();
-                    return { changes, lastInsertRowid };
-                },
-            };
-        },
-        exec(sql) {
-            inner.run(sql);
-            if (txDepth === 0)
-                save();
-        },
-        pragma(cmd, opts) {
-            const result = inner.exec(`PRAGMA ${cmd}`);
-            if (opts?.simple) {
-                if (result.length === 0)
-                    return undefined;
-                return result[0].values[0][0];
-            }
-            return result;
-        },
-        transaction(fn) {
-            return () => {
-                const sp = `sp_${txDepth}`;
-                if (txDepth === 0) {
-                    inner.run("BEGIN");
-                }
-                else {
-                    inner.run(`SAVEPOINT ${sp}`);
-                }
-                txDepth++;
-                try {
-                    const result = fn();
-                    txDepth--;
-                    if (txDepth === 0) {
-                        inner.run("COMMIT");
-                        save();
-                    }
-                    else {
-                        inner.run(`RELEASE ${sp}`);
-                    }
-                    return result;
-                }
-                catch (e) {
-                    txDepth--;
-                    if (txDepth === 0) {
-                        inner.run("ROLLBACK");
-                    }
-                    else {
-                        inner.run(`ROLLBACK TO ${sp}`);
-                    }
-                    throw e;
-                }
-            };
-        },
-        close() {
-            save();
-            inner.close();
-        },
-    };
-    return db;
-}
-export async function initSql() {
-    if (!SQL)
-        SQL = await initSqlJs();
-}
 export function openDatabase(path) {
     mkdirSync(dirname(path), { recursive: true });
-    let inner;
-    if (existsSync(path)) {
-        const buffer = readFileSync(path);
-        inner = new SQL.Database(buffer);
-    }
-    else {
-        inner = new SQL.Database();
-    }
-    inner.run("PRAGMA foreign_keys = ON");
-    return wrapDatabase(inner, path);
+    const db = new Database(path);
+    // WAL lets concurrent sessions read while one writes; busy_timeout makes a
+    // second writer wait for the lock rather than failing with SQLITE_BUSY.
+    db.pragma("journal_mode = WAL");
+    db.pragma("busy_timeout = 5000");
+    db.pragma("foreign_keys = ON");
+    return db;
 }
 export function openMemoryDatabase() {
-    const inner = new SQL.Database();
-    inner.run("PRAGMA foreign_keys = ON");
-    return wrapDatabase(inner, null);
+    const db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    return db;
 }
-export function initRepoSchema(db) {
-    // Migrate away from the legacy FTS5 schema. Versions before the LIKE-based
-    // search created nodes_fts / observations_fts virtual tables (USING fts5)
-    // plus AFTER INSERT/UPDATE/DELETE triggers that wrote into them. Search no
-    // longer uses FTS5, and the bundled sql.js has no fts5 module, so on a
-    // pre-migration database those triggers make every node/observation write
-    // fail with "no such module: fts5". Dropping a trigger does not need the
-    // module (dropping the virtual table itself would); the now-unused virtual
-    // tables are simply never referenced again.
+// One file holds every repo's graph plus the user's global facts. Repo-scoped
+// rows carry a repo_id; global facts do not. Node identity is (repo_id, name),
+// so the same node name in two repos is two distinct rows. Edges and
+// observations reference nodes by (repo_id, name) and cascade on node delete.
+export function initSchema(db) {
     db.exec(`
-    DROP TRIGGER IF EXISTS nodes_fts_insert;
-    DROP TRIGGER IF EXISTS nodes_fts_update;
-    DROP TRIGGER IF EXISTS nodes_fts_delete;
-    DROP TRIGGER IF EXISTS observations_fts_insert;
-    DROP TRIGGER IF EXISTS observations_fts_update;
-    DROP TRIGGER IF EXISTS observations_fts_delete;
-  `);
-    db.exec(`
+    CREATE TABLE IF NOT EXISTS repos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      root_path TEXT NOT NULL UNIQUE,
+      remote_url TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS nodes (
-      name TEXT PRIMARY KEY,
+      repo_id INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
       type TEXT NOT NULL,
       summary TEXT,
       entry_points TEXT DEFAULT '[]',
@@ -164,39 +39,43 @@ export function initRepoSchema(db) {
       last_commit TEXT,
       metadata TEXT DEFAULT '{}',
       created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
+      updated_at TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (repo_id, name)
     );
 
     CREATE TABLE IF NOT EXISTS edges (
-      from_node TEXT NOT NULL REFERENCES nodes(name) ON DELETE CASCADE,
-      to_node TEXT NOT NULL REFERENCES nodes(name) ON DELETE CASCADE,
+      repo_id INTEGER NOT NULL,
+      from_node TEXT NOT NULL,
+      to_node TEXT NOT NULL,
       type TEXT NOT NULL,
       reason TEXT,
       created_at TEXT DEFAULT (datetime('now')),
-      PRIMARY KEY (from_node, to_node, type)
+      PRIMARY KEY (repo_id, from_node, to_node, type),
+      FOREIGN KEY (repo_id, from_node) REFERENCES nodes(repo_id, name) ON DELETE CASCADE,
+      FOREIGN KEY (repo_id, to_node) REFERENCES nodes(repo_id, name) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS observations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      node_name TEXT NOT NULL REFERENCES nodes(name) ON DELETE CASCADE,
+      repo_id INTEGER NOT NULL,
+      node_name TEXT NOT NULL,
       content TEXT NOT NULL,
       source TEXT,
-      created_at TEXT DEFAULT (datetime('now'))
+      created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (repo_id, node_name) REFERENCES nodes(repo_id, name) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS project_facts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      repo_id INTEGER NOT NULL REFERENCES repos(id) ON DELETE CASCADE,
       category TEXT NOT NULL,
       subject TEXT NOT NULL,
       content TEXT NOT NULL,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
-      UNIQUE(category, subject)
+      UNIQUE(repo_id, category, subject)
     );
-  `);
-}
-export function initGlobalSchema(db) {
-    db.exec(`
+
     CREATE TABLE IF NOT EXISTS facts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       category TEXT NOT NULL,
@@ -207,5 +86,23 @@ export function initGlobalSchema(db) {
       UNIQUE(category, subject)
     );
   `);
+}
+// Resolve a repo row to its id, creating it on first sight. root_path is the
+// identity key. remote_url is captured opportunistically for a future sharing
+// layer and refreshed when supplied; it is not part of identity today.
+export function ensureRepo(db, rootPath, remoteUrl) {
+    const existing = db
+        .prepare("SELECT id FROM repos WHERE root_path = ?")
+        .get(rootPath);
+    if (existing) {
+        if (remoteUrl) {
+            db.prepare("UPDATE repos SET remote_url = ? WHERE id = ?").run(remoteUrl, existing.id);
+        }
+        return existing.id;
+    }
+    const result = db
+        .prepare("INSERT INTO repos (root_path, remote_url) VALUES (?, ?)")
+        .run(rootPath, remoteUrl);
+    return Number(result.lastInsertRowid);
 }
 //# sourceMappingURL=db.js.map

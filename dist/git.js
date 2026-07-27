@@ -11,6 +11,15 @@ export function getRepoRoot(cwd) {
         throw new Error("Not in a git repository");
     }
 }
+export function getRemoteUrl(repoRoot) {
+    try {
+        const url = execFileSync("git", ["config", "--get", "remote.origin.url"], { cwd: repoRoot, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+        return url || null;
+    }
+    catch {
+        return null;
+    }
+}
 export function getHead(repoRoot) {
     return execFileSync("git", ["rev-parse", "HEAD"], {
         cwd: repoRoot,

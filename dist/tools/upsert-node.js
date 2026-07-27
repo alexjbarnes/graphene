@@ -60,18 +60,18 @@ function normalizeArgs(args) {
     }
     return merged;
 }
-export function handleUpsertNode(db, args) {
+export function handleUpsertNode(db, repoId, args) {
     const params = normalizeArgs(args);
     if (!params.name)
         throw new Error("name is required");
     const existing = db
-        .prepare("SELECT name, metadata FROM nodes WHERE name = ?")
-        .get(params.name);
+        .prepare("SELECT name, metadata FROM nodes WHERE repo_id = ? AND name = ?")
+        .get(repoId, params.name);
     if (!existing) {
         if (!params.type)
             throw new Error("type is required when creating a node");
-        db.prepare(`INSERT INTO nodes (name, type, summary, entry_points, covers, last_commit, metadata)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`).run(params.name, params.type, params.summary ?? null, JSON.stringify(params.entry_points ?? []), JSON.stringify(params.covers ?? []), params.last_commit ?? null, JSON.stringify(params.metadata ?? {}));
+        db.prepare(`INSERT INTO nodes (repo_id, name, type, summary, entry_points, covers, last_commit, metadata)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(repoId, params.name, params.type, params.summary ?? null, JSON.stringify(params.entry_points ?? []), JSON.stringify(params.covers ?? []), params.last_commit ?? null, JSON.stringify(params.metadata ?? {}));
         return { name: params.name, status: "created" };
     }
     const updates = [];
@@ -115,8 +115,8 @@ export function handleUpsertNode(db, args) {
             `not wrapped in a "fields" object.`);
     }
     updates.push("updated_at = datetime('now')");
-    values.push(params.name);
-    db.prepare(`UPDATE nodes SET ${updates.join(", ")} WHERE name = ?`).run(...values);
+    values.push(repoId, params.name);
+    db.prepare(`UPDATE nodes SET ${updates.join(", ")} WHERE repo_id = ? AND name = ?`).run(...values);
     return { name: params.name, status: "updated", fields_updated: fieldsUpdated };
 }
 //# sourceMappingURL=upsert-node.js.map

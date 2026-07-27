@@ -7,8 +7,8 @@ function scoreMatch(text: string, words: string[]): number {
 }
 
 export function handleSearch(
-  repoDB: GrapheneDatabase,
-  globalDB: GrapheneDatabase,
+  db: GrapheneDatabase,
+  repoId: number,
   args: Record<string, unknown>
 ): { results: SearchResult[] } {
   const query = args.query as string;
@@ -22,9 +22,9 @@ export function handleSearch(
 
   const nodeWhere = words.map(() => "(name LIKE ? OR summary LIKE ?)").join(" OR ");
   const nodeParams = patterns.flatMap(p => [p, p]);
-  const nodeMatches = repoDB
-    .prepare(`SELECT name, type, summary FROM nodes WHERE ${nodeWhere}`)
-    .all(...nodeParams) as unknown as Array<{ name: string; type: string; summary: string | null }>;
+  const nodeMatches = db
+    .prepare(`SELECT name, type, summary FROM nodes WHERE repo_id = ? AND (${nodeWhere})`)
+    .all(repoId, ...nodeParams) as unknown as Array<{ name: string; type: string; summary: string | null }>;
 
   for (const m of nodeMatches) {
     results.push({
@@ -36,9 +36,9 @@ export function handleSearch(
   }
 
   const obsWhere = words.map(() => "o.content LIKE ?").join(" OR ");
-  const obsMatches = repoDB
-    .prepare(`SELECT o.node_name, o.content, o.created_at FROM observations o WHERE ${obsWhere}`)
-    .all(...patterns) as unknown as Array<{ node_name: string; content: string; created_at: string }>;
+  const obsMatches = db
+    .prepare(`SELECT o.node_name, o.content, o.created_at FROM observations o WHERE o.repo_id = ? AND (${obsWhere})`)
+    .all(repoId, ...patterns) as unknown as Array<{ node_name: string; content: string; created_at: string }>;
 
   for (const m of obsMatches) {
     results.push({
@@ -53,9 +53,9 @@ export function handleSearch(
   const factWhere = words.map(() => "(category LIKE ? OR subject LIKE ? OR content LIKE ?)").join(" OR ");
   const factParams = patterns.flatMap(p => [p, p, p]);
 
-  const projectFacts = repoDB
-    .prepare(`SELECT category, subject, content FROM project_facts WHERE ${factWhere}`)
-    .all(...factParams) as unknown as Array<{ category: string; subject: string; content: string }>;
+  const projectFacts = db
+    .prepare(`SELECT category, subject, content FROM project_facts WHERE repo_id = ? AND (${factWhere})`)
+    .all(repoId, ...factParams) as unknown as Array<{ category: string; subject: string; content: string }>;
 
   for (const f of projectFacts) {
     results.push({
@@ -66,7 +66,7 @@ export function handleSearch(
     });
   }
 
-  const globalFacts = globalDB
+  const globalFacts = db
     .prepare(`SELECT category, subject, content FROM facts WHERE ${factWhere}`)
     .all(...factParams) as unknown as Array<{ category: string; subject: string; content: string }>;
 
@@ -80,9 +80,9 @@ export function handleSearch(
   }
 
   const edgeWhere = words.map(() => "reason LIKE ?").join(" OR ");
-  const edgeMatches = repoDB
-    .prepare(`SELECT from_node, to_node, type, reason FROM edges WHERE reason IS NOT NULL AND (${edgeWhere})`)
-    .all(...patterns) as unknown as Array<{ from_node: string; to_node: string; type: string; reason: string }>;
+  const edgeMatches = db
+    .prepare(`SELECT from_node, to_node, type, reason FROM edges WHERE repo_id = ? AND reason IS NOT NULL AND (${edgeWhere})`)
+    .all(repoId, ...patterns) as unknown as Array<{ from_node: string; to_node: string; type: string; reason: string }>;
 
   for (const e of edgeMatches) {
     results.push({

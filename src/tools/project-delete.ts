@@ -2,6 +2,7 @@ import type { GrapheneDatabase } from "../db.js";
 
 export function handleProjectDelete(
   db: GrapheneDatabase,
+  repoId: number,
   args: Record<string, unknown>
 ): { deleted: boolean } {
   const category = args.category as string;
@@ -12,8 +13,8 @@ export function handleProjectDelete(
   }
 
   const result = db
-    .prepare("DELETE FROM project_facts WHERE category = ? AND subject = ?")
-    .run(category, subject);
+    .prepare("DELETE FROM project_facts WHERE repo_id = ? AND category = ? AND subject = ?")
+    .run(repoId, category, subject);
 
   return { deleted: result.changes > 0 };
 }

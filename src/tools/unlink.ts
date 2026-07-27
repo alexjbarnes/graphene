@@ -3,6 +3,7 @@ import { BIDIRECTIONAL_EDGE_TYPES } from "../types.js";
 
 export function handleUnlink(
   db: GrapheneDatabase,
+  repoId: number,
   args: Record<string, unknown>
 ): { removed: number } {
   const from = args.from as string;
@@ -16,25 +17,25 @@ export function handleUnlink(
   db.transaction(() => {
     if (type) {
       const r1 = db
-        .prepare("DELETE FROM edges WHERE from_node = ? AND to_node = ? AND type = ?")
-        .run(from, to, type);
+        .prepare("DELETE FROM edges WHERE repo_id = ? AND from_node = ? AND to_node = ? AND type = ?")
+        .run(repoId, from, to, type);
       removed += r1.changes;
 
       if (BIDIRECTIONAL_EDGE_TYPES.has(type)) {
         const r2 = db
-          .prepare("DELETE FROM edges WHERE from_node = ? AND to_node = ? AND type = ?")
-          .run(to, from, type);
+          .prepare("DELETE FROM edges WHERE repo_id = ? AND from_node = ? AND to_node = ? AND type = ?")
+          .run(repoId, to, from, type);
         removed += r2.changes;
       }
     } else {
       const r1 = db
-        .prepare("DELETE FROM edges WHERE from_node = ? AND to_node = ?")
-        .run(from, to);
+        .prepare("DELETE FROM edges WHERE repo_id = ? AND from_node = ? AND to_node = ?")
+        .run(repoId, from, to);
       removed += r1.changes;
 
       const r2 = db
-        .prepare("DELETE FROM edges WHERE from_node = ? AND to_node = ?")
-        .run(to, from);
+        .prepare("DELETE FROM edges WHERE repo_id = ? AND from_node = ? AND to_node = ?")
+        .run(repoId, to, from);
       removed += r2.changes;
     }
   })();

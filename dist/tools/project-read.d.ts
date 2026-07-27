@@ -7,7 +7,7 @@ interface ProjectFact {
     created_at: string;
     updated_at: string;
 }
-export declare function handleProjectRead(db: GrapheneDatabase, args: Record<string, unknown>): {
+export declare function handleProjectRead(db: GrapheneDatabase, repoId: number, args: Record<string, unknown>): {
     facts: ProjectFact[];
 };
 export {};

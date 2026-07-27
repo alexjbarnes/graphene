@@ -12,6 +12,19 @@ export function getRepoRoot(cwd?: string): string {
   }
 }
 
+export function getRemoteUrl(repoRoot: string): string | null {
+  try {
+    const url = execFileSync(
+      "git",
+      ["config", "--get", "remote.origin.url"],
+      { cwd: repoRoot, encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
+    ).trim();
+    return url || null;
+  } catch {
+    return null;
+  }
+}
+
 export function getHead(repoRoot: string): string {
   return execFileSync("git", ["rev-parse", "HEAD"], {
     cwd: repoRoot,

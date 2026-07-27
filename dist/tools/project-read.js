@@ -1,9 +1,8 @@
-export function handleProjectRead(db, args) {
+export function handleProjectRead(db, repoId, args) {
     const category = args.category;
     const subject = args.subject;
-    let sql = "SELECT * FROM project_facts";
-    const conditions = [];
-    const params = [];
+    const conditions = ["repo_id = ?"];
+    const params = [repoId];
     if (category) {
         conditions.push("category = ?");
         params.push(category);
@@ -12,10 +11,9 @@ export function handleProjectRead(db, args) {
         conditions.push("subject = ?");
         params.push(subject);
     }
-    if (conditions.length > 0) {
-        sql += " WHERE " + conditions.join(" AND ");
-    }
-    sql += " ORDER BY category, subject";
+    const sql = "SELECT * FROM project_facts WHERE " +
+        conditions.join(" AND ") +
+        " ORDER BY category, subject";
     const facts = db.prepare(sql).all(...params);
     return { facts };
 }

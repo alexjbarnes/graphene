@@ -1,12 +1,8 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { initSql, openDatabase, openMemoryDatabase, initRepoSchema, initGlobalSchema } from "../src/db.js";
+import { describe, it, expect } from "vitest";
+import { openDatabase, openMemoryDatabase, initSchema, ensureRepo } from "../src/db.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-
-beforeAll(async () => {
-  await initSql();
-});
 
 describe("openDatabase", () => {
   it("creates parent directories and opens database", () => {
@@ -22,107 +18,88 @@ describe("openDatabase", () => {
     }
   });
 
-  it("enables foreign keys", () => {
+  it("enables WAL journal mode", () => {
     const tmp = mkdtempSync(join(tmpdir(), "graphene-db-test-"));
     try {
       const db = openDatabase(join(tmp, "test.db"));
-      const fk = db.pragma("foreign_keys", { simple: true });
-      expect(fk).toBe(1);
+      const mode = db.pragma("journal_mode", { simple: true });
+      expect(mode).toBe("wal");
       db.close();
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
+  // The bug this whole change exists to kill: one session opened a byte snapshot
+  // and never saw another session's writes. Two live connections to the same
+  // file must now see each other's committed rows.
+  it("a second connection sees the first connection's committed writes", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "graphene-db-test-"));
+    try {
+      const path = join(tmp, "graphene.db");
+      const a = openDatabase(path);
+      initSchema(a);
+      const repoId = ensureRepo(a, "/r", null);
+
+      const b = openDatabase(path);
+      a.prepare("INSERT INTO nodes (repo_id, name, type) VALUES (?, ?, ?)").run(repoId, "auth", "subsystem");
+
+      const seen = b
+        .prepare("SELECT name FROM nodes WHERE repo_id = ?")
+        .all(repoId)
+        .map((r: Record<string, unknown>) => r.name);
+      expect(seen).toEqual(["auth"]);
+
+      a.close();
+      b.close();
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
 });
 
-describe("initRepoSchema", () => {
-  it("creates nodes, edges, observations tables", () => {
+describe("initSchema", () => {
+  it("creates every table", () => {
     const db = openMemoryDatabase();
-    initRepoSchema(db);
+    initSchema(db);
 
     const tables = db
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-      )
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
       .all()
       .map((r: Record<string, unknown>) => r.name);
 
+    expect(tables).toContain("repos");
     expect(tables).toContain("nodes");
     expect(tables).toContain("edges");
     expect(tables).toContain("observations");
+    expect(tables).toContain("project_facts");
+    expect(tables).toContain("facts");
     db.close();
   });
 
   it("is idempotent", () => {
     const db = openMemoryDatabase();
-    initRepoSchema(db);
-    initRepoSchema(db);
+    initSchema(db);
+    initSchema(db);
     db.close();
   });
 
   it("enforces foreign keys on edges", () => {
     const db = openMemoryDatabase();
-    initRepoSchema(db);
+    initSchema(db);
+    const repoId = ensureRepo(db, "/r", null);
 
     expect(() => {
       db.prepare(
-        "INSERT INTO edges (from_node, to_node, type) VALUES ('x', 'y', 'related_to')"
-      ).run();
+        "INSERT INTO edges (repo_id, from_node, to_node, type) VALUES (?, 'x', 'y', 'related_to')"
+      ).run(repoId);
     }).toThrow();
     db.close();
   });
 
-  it("drops legacy FTS5 triggers so writes succeed on an upgraded database", () => {
+  it("enforces unique category+subject on global facts", () => {
     const db = openMemoryDatabase();
-    initRepoSchema(db);
-
-    // Simulate a pre-migration database: a leftover trigger of the same name
-    // the FTS5-era schema used. A real fts5 virtual table cannot be created
-    // here (the bundled sql.js has no fts5 module), so a RAISE trigger stands
-    // in for the write failure the real one caused.
-    db.exec(
-      "CREATE TRIGGER nodes_fts_insert AFTER INSERT ON nodes BEGIN SELECT RAISE(ABORT, 'legacy fts trigger'); END"
-    );
-
-    expect(() => {
-      db.prepare("INSERT INTO nodes (name, type) VALUES ('x', 'subsystem')").run();
-    }).toThrow();
-
-    // Re-running initRepoSchema must drop the legacy trigger.
-    initRepoSchema(db);
-
-    expect(() => {
-      db.prepare("INSERT INTO nodes (name, type) VALUES ('y', 'subsystem')").run();
-    }).not.toThrow();
-
-    const triggers = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='trigger'")
-      .all()
-      .map((r: Record<string, unknown>) => r.name);
-    expect(triggers).not.toContain("nodes_fts_insert");
-    db.close();
-  });
-});
-
-describe("initGlobalSchema", () => {
-  it("creates facts table", () => {
-    const db = openMemoryDatabase();
-    initGlobalSchema(db);
-
-    const tables = db
-      .prepare(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-      )
-      .all()
-      .map((r: Record<string, unknown>) => r.name);
-
-    expect(tables).toContain("facts");
-    db.close();
-  });
-
-  it("enforces unique category+subject", () => {
-    const db = openMemoryDatabase();
-    initGlobalSchema(db);
+    initSchema(db);
 
     db.prepare(
       "INSERT INTO facts (category, subject, content) VALUES ('pref', 'go', 'use std')"
@@ -133,6 +110,47 @@ describe("initGlobalSchema", () => {
         "INSERT INTO facts (category, subject, content) VALUES ('pref', 'go', 'other')"
       ).run();
     }).toThrow();
+    db.close();
+  });
+});
+
+describe("ensureRepo", () => {
+  it("creates a repo row and returns its id", () => {
+    const db = openMemoryDatabase();
+    initSchema(db);
+    const id = ensureRepo(db, "/home/me/proj", null);
+    expect(id).toBeGreaterThan(0);
+    db.close();
+  });
+
+  it("returns the same id for the same root_path", () => {
+    const db = openMemoryDatabase();
+    initSchema(db);
+    const a = ensureRepo(db, "/home/me/proj", null);
+    const b = ensureRepo(db, "/home/me/proj", null);
+    expect(b).toBe(a);
+    db.close();
+  });
+
+  it("gives distinct repos distinct ids", () => {
+    const db = openMemoryDatabase();
+    initSchema(db);
+    const a = ensureRepo(db, "/home/me/one", null);
+    const b = ensureRepo(db, "/home/me/two", null);
+    expect(b).not.toBe(a);
+    db.close();
+  });
+
+  it("backfills remote_url when later supplied", () => {
+    const db = openMemoryDatabase();
+    initSchema(db);
+    const id = ensureRepo(db, "/home/me/proj", null);
+    ensureRepo(db, "/home/me/proj", "git@github.com:me/proj.git");
+
+    const row = db.prepare("SELECT remote_url FROM repos WHERE id = ?").get(id) as {
+      remote_url: string | null;
+    };
+    expect(row.remote_url).toBe("git@github.com:me/proj.git");
     db.close();
   });
 });

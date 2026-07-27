@@ -6,13 +6,14 @@ import { handleRead } from "../../src/tools/read.js";
 
 describe("batch", () => {
   let db: GrapheneDatabase;
+  let repoId: number;
 
   beforeEach(async () => {
-    db = await createTestRepoDb();
+    ({ db, repoId } = createTestRepoDb());
   });
 
   it("creates nodes, edges, and observations in one call", () => {
-    const result = handleBatch(db, {
+    const result = handleBatch(db, repoId, {
       nodes: [
         { name: "auth", type: "subsystem", summary: "Auth system" },
         { name: "db", type: "module", summary: "Database layer" },
@@ -32,7 +33,7 @@ describe("batch", () => {
 
   it("all operations are in a single transaction (rollback on error)", () => {
     expect(() =>
-      handleBatch(db, {
+      handleBatch(db, repoId, {
         nodes: [
           { name: "auth", type: "subsystem" },
         ],
@@ -42,22 +43,22 @@ describe("batch", () => {
       })
     ).toThrow();
 
-    const index = handleRead(db, {}) as { nodes: unknown[] };
+    const index = handleRead(db, repoId, {}) as { nodes: unknown[] };
     expect(index.nodes).toHaveLength(0);
   });
 
   it("rejects empty arrays", () => {
-    expect(() => handleBatch(db, { nodes: [], edges: [], observations: [] })).toThrow(
+    expect(() => handleBatch(db, repoId, { nodes: [], edges: [], observations: [] })).toThrow(
       "at least one non-empty array"
     );
   });
 
   it("rejects unknown keys", () => {
-    expect(() => handleBatch(db, { operations: [] })).toThrow("Unknown keys: operations");
+    expect(() => handleBatch(db, repoId, { operations: [] })).toThrow("Unknown keys: operations");
   });
 
   it("handles missing arrays", () => {
-    const result = handleBatch(db, {
+    const result = handleBatch(db, repoId, {
       nodes: [{ name: "auth", type: "subsystem" }],
     });
     expect(result.nodes_created).toBe(1);
@@ -66,7 +67,7 @@ describe("batch", () => {
   });
 
   it("creates bidirectional edges correctly", () => {
-    handleBatch(db, {
+    handleBatch(db, repoId, {
       nodes: [
         { name: "auth", type: "subsystem" },
         { name: "session", type: "subsystem" },
