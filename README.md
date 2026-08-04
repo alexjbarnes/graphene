@@ -70,7 +70,7 @@ npm run build
 npm test
 ```
 
-Tests run on [Vitest](https://vitest.dev/). The suite covers the database wrapper, every tool, the git helpers, and the hook logic.
+Tests run on [Vitest](https://vitest.dev/). The suite covers the file store, every tool, multi-repo routing, migration, concurrency, the git helpers, and the hook logic, plus an end-to-end run of the compiled server over MCP stdio.
 
 ## License
 
