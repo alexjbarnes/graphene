@@ -7,7 +7,7 @@ covers:
   - src/scope.ts
   - tests/scope.test.ts
   - tests/multi-repo.test.ts
-last_commit: 9276b4c
+last_commit: ac1233d
 edges:
   - to: file-store type: depends_on reason: resolves and routes against store reads
 ---
