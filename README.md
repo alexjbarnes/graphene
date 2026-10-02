@@ -51,7 +51,7 @@ Graphene is two layers.
 
 The **MCP server** stores and serves the graph. It exposes 19 tools across reading (`status`, `read`, `search`, `stale`), recording (`learn`, `upsert_node`, `link`, `batch`, `project_write`, `global_write`, `globals_export`, `globals_import`), and cleanup. Data sits in plain markdown: one file per node under `.graphene/nodes/`, one file per fact under `.graphene/facts/`, committed with the rest of the repo. See [Tools](docs/tools.md) and [Concepts](docs/concepts.md).
 
-The **enforcement layer** is a set of Claude Code hooks. On the first tool call of a session, a `PreToolUse` hook injects the current graph. Right before a `git commit` runs, that same hook compares staged files against every node's covered paths and tells the agent which nodes to update, so the graph rides the same commit as the code it describes. A lighter `PostToolUse` reminder only fires when a commit went through without its `.graphene/` update. See [Enforcement](docs/enforcement.md).
+The **enforcement layer** is a set of Claude Code hooks. On the first tool call of a session, a `PreToolUse` hook injects the current graph. Right before a `git commit` runs, that same hook compares staged files against every node's covered paths and tells the agent which nodes to update, so the graph rides the same commit as the code it describes. A lighter `PostToolUse` reminder only fires when a commit went through without the node updates it needed. See [Enforcement](docs/enforcement.md).
 
 ## Documentation
 

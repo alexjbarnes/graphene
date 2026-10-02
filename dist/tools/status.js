@@ -1,5 +1,5 @@
-import { listNodes, readNode, listFacts, factsDir } from "../store.js";
-import { getChangedFiles, getHead } from "../git.js";
+import { listNodes, readNode, listFacts, factsDir, nodeGitPath } from "../store.js";
+import { getUnreviewedFiles, getHead } from "../git.js";
 const KEYS_CAP = 50;
 // Caps a list of "category/subject" keys so status can never grow unbounded:
 // full fact bodies are never included, only counts and a capped key list.
@@ -30,7 +30,7 @@ export function handleStatus(repoRoot, globalDirPath, _args) {
         }
         if (node.covers.length === 0)
             continue;
-        const changed = getChangedFiles(repoRoot, node.last_commit, node.covers);
+        const changed = getUnreviewedFiles(repoRoot, node.last_commit, node.covers, nodeGitPath(node.name));
         if (changed.length > 0) {
             staleNodes.push({ name: node.name, reason: "changed", changed_files: changed });
         }

@@ -363,6 +363,13 @@ export function nodePath(repoRoot: string, name: string): string {
   return join(nodesDir(repoRoot), `${name}.md`);
 }
 
+// The node file's path relative to the repo root, with forward slashes: the
+// form git prints paths in, for matching a node file against git output.
+export function nodeGitPath(name: string): string {
+  validateSlug(name, "node name");
+  return `.graphene/nodes/${name}.md`;
+}
+
 function factFileName(category: string, subject: string): string {
   validateSlug(category, "category");
   validateSlug(subject, "subject");

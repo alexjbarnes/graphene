@@ -35,6 +35,7 @@ export declare function grapheneDir(repoRoot: string): string;
 export declare function nodesDir(repoRoot: string): string;
 export declare function factsDir(repoRoot: string): string;
 export declare function nodePath(repoRoot: string, name: string): string;
+export declare function nodeGitPath(name: string): string;
 export declare function factPath(repoRoot: string, category: string, subject: string): string;
 export declare function globalDir(): string;
 export declare function globalFactPath(category: string, subject: string): string;

@@ -89,6 +89,14 @@ describe("status", () => {
     expect(result.stale_nodes[0].reason).toBe("untracked");
   });
 
+  it("does not report a node as stale for code that rode the same commit as its update", () => {
+    handleUpsertNode(repo.path, { name: "auth", type: "subsystem", covers: ["auth/"], last_commit: getHead(repo.path) });
+    repo.writeFile("auth/router.ts", "export const router = {};");
+    repo.commit("add router with its node");
+
+    expect(handleStatus(repo.path, global.dir, {}).stale_nodes).toEqual([]);
+  });
+
   it("caps fact keys at 50 with a trailing +N more entry", () => {
     for (let i = 0; i < 55; i++) {
       handleProjectWrite(repo.path, {

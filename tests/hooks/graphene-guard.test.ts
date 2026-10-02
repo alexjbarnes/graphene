@@ -250,7 +250,7 @@ describe("graphene-guard hook", () => {
       rmSync(repoPath, { recursive: true, force: true });
     });
 
-    it("reminds to update nodes when the commit touched covered files without .graphene/", () => {
+    it("reminds to update nodes when the commit touched covered files without their node files", () => {
       writeFileSync(join(repoPath, "src", "auth.ts"), "export const login = () => {};\n");
       execSync("git add src/auth.ts && git commit -m 'add login'", { cwd: repoPath, stdio: "ignore" });
 
@@ -263,12 +263,38 @@ describe("graphene-guard hook", () => {
 
       const output = parseOutput(stdout);
       const ctx = output.hookSpecificOutput.additionalContext;
-      expect(ctx).toContain("This commit touched files these graphene nodes cover, but .graphene/ was not part of it:");
+      expect(ctx).toContain(
+        "This commit touched files these graphene nodes cover, but their node files were not part of it:"
+      );
       expect(ctx).toContain("auth (src/auth.ts)");
+      expect(ctx).toContain("set last_commit to this commit");
       expect(ctx).toContain("git commit --amend");
     });
 
-    it("stays silent when the commit included .graphene/ changes alongside covered files", () => {
+    it("reminds about a covering node whose file was not in the commit, even when another node's was", () => {
+      writeFileSync(join(repoPath, ".graphene", "nodes", "src.md"), "---\ntype: subsystem\ncovers:\n  - src/\n---\n");
+      execSync("git add -A && git commit -m 'add src node'", { cwd: repoPath, stdio: "ignore" });
+
+      writeFileSync(join(repoPath, "src", "auth.ts"), "export const login = () => {};\n");
+      writeFileSync(
+        join(repoPath, ".graphene", "nodes", "auth.md"),
+        "---\ntype: subsystem\ncovers:\n  - src/auth\n---\n\n- Added login export <!-- id:abcd -->\n"
+      );
+      execSync("git add -A && git commit -m 'add login'", { cwd: repoPath, stdio: "ignore" });
+
+      const { stdout } = run({
+        session_id: "s1",
+        hook_event_name: "PostToolUse",
+        tool_name: "Bash",
+        tool_input: { command: 'git commit -m "add login"' },
+      }, { cwd: repoPath });
+
+      const ctx = parseOutput(stdout).hookSpecificOutput.additionalContext;
+      expect(ctx).toContain("src (src/auth.ts)");
+      expect(ctx).not.toContain("auth (src/auth.ts)");
+    });
+
+    it("stays silent when the commit included the covering node's file alongside covered files", () => {
       writeFileSync(join(repoPath, "src", "auth.ts"), "export const login = () => {};\n");
       writeFileSync(
         join(repoPath, ".graphene", "nodes", "auth.md"),
@@ -355,7 +381,7 @@ describe("graphene-guard hook", () => {
       rmSync(repoPath, { recursive: true, force: true });
     });
 
-    it("fires when a staged file is covered by a node and .graphene/ is not staged", () => {
+    it("fires when a staged file is covered by a node whose file is not staged", () => {
       writeFileSync(join(repoPath, "src", "auth.ts"), "export const login = () => {};\n");
       execSync("git add src/auth.ts", { cwd: repoPath, stdio: "ignore" });
 
@@ -368,12 +394,38 @@ describe("graphene-guard hook", () => {
 
       const output = parseOutput(stdout);
       const ctx = output.hookSpecificOutput.additionalContext;
-      expect(ctx).toContain("You are about to commit. These graphene nodes cover staged files:");
+      expect(ctx).toContain(
+        "You are about to commit. These graphene nodes cover staged files, but their node files are not staged:"
+      );
       expect(ctx).toContain("auth (src/auth.ts)");
       expect(ctx).toContain(
-        "Update them NOW (learn / upsert_node / last_commit) and stage the .graphene/ changes, " +
-        "so the graph rides this commit. Then re-run the commit."
+        "Update them NOW (learn / upsert_node / last_commit) and stage their .graphene/nodes/ files, " +
+        "so the graph rides this commit. A node whose file is not in the commit reads as stale afterwards. " +
+        "Then re-run the commit."
       );
+    });
+
+    it("fires for a covering node whose file is not staged, even when another node's file is", () => {
+      writeFileSync(join(repoPath, ".graphene", "nodes", "src.md"), "---\ntype: subsystem\ncovers:\n  - src/\n---\n");
+      execSync("git add -A && git commit -m 'add src node'", { cwd: repoPath, stdio: "ignore" });
+
+      writeFileSync(join(repoPath, "src", "auth.ts"), "export const login = () => {};\n");
+      writeFileSync(
+        join(repoPath, ".graphene", "nodes", "auth.md"),
+        "---\ntype: subsystem\ncovers:\n  - src/auth\n---\n\n- Added login export <!-- id:abcd -->\n"
+      );
+      execSync("git add -A", { cwd: repoPath, stdio: "ignore" });
+
+      const { stdout } = run({
+        session_id: "s1",
+        hook_event_name: "PreToolUse",
+        tool_name: "Bash",
+        tool_input: { command: 'git commit -m "add login"' },
+      }, { cwd: repoPath });
+
+      const ctx = parseOutput(stdout).hookSpecificOutput.additionalContext;
+      expect(ctx).toContain("src (src/auth.ts)");
+      expect(ctx).not.toContain("auth (src/auth.ts)");
     });
 
     it("does not block the tool call, only injects context", () => {
@@ -393,7 +445,7 @@ describe("graphene-guard hook", () => {
       expect(output).not.toHaveProperty("permissionDecision");
     });
 
-    it("stays silent when .graphene/ is staged alongside the covered file", () => {
+    it("stays silent when the covering node's file is staged alongside the covered file", () => {
       writeFileSync(join(repoPath, "src", "auth.ts"), "export const login = () => {};\n");
       writeFileSync(
         join(repoPath, ".graphene", "nodes", "auth.md"),

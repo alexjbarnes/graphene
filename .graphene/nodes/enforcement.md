@@ -9,7 +9,7 @@ covers:
   - hooks/
   - src/claude-md.ts
   - tests/hooks/
-last_commit: ac1233d
+last_commit: ff10d46
 edges:
   - to: file-store type: depends_on reason: hook reads status and affected nodes through the store
   - to: mcp-tools type: depends_on reason: multi-repo status injection calls dist/server.js dispatch, the same path as the status tool
@@ -24,5 +24,5 @@ edges:
 - files branch (phase 02, commit a905a6f): hook's getStatus and getAffectedNodes now read the markdown file store via dist/store.js (listNodes/readNode), no database. formatStatus renders the bounded status shape: per-node observation counts, fact KEYS only (project_facts.count/keys), never observation or fact bodies. remove_observation rules line in src/claude-md.ts updated to (node, id). Commit-gate flip to before-commit guidance still pending in phase 06. <!-- id:e385 -->
 - phase 03 (9276b4c): rules text project_read/write/delete lines in src/claude-md.ts gained the optional repo arg for multi-repo sessions. Full rules rewrite still owed in phase 06. <!-- id:f6c7 -->
 - phase 04 (19cf28f): rules text gained one line for globals_export/globals_import in the Tools: recording section. <!-- id:dc18 -->
-- phase 06 (7325c61): enforcement point moved to PreToolUse on git commit, computed from STAGED files vs node covers, silent when .graphene/ is staged alongside (graph riding the commit is the end state). PostToolUse is now only a light amend reminder when a commit touched covered files without .graphene/. Multi-repo sessions inject per-repo sectioned status through dist/server.js dispatch, the same code path as the status tool, so hook and tool can never drift. GRAPHENE_RULES rewritten: committed graph, update-before-commit rule, bounded status wording, multi-repo qualification section, new red-flag row for post-commit rationalization. <!-- id:ad7b -->
 - Rules text gained a supersede rule (remove the old observation when recording its replacement) and a brevity rule for learn() because real nodes reached 60K+ characters, mostly superseded history and restated code comments. The read budget in src/tools/read.ts is the mechanical backstop if agents ignore the wording. <!-- id:3399 -->
+- The commit gate (PreToolUse on git commit, from STAGED files) and the post-commit reminder work per node: a node is flagged when its covers match a file in the commit but its own .graphene/nodes/<name>.md is not in it. That is the staleness rule in src/git.ts getUnreviewedFiles, so a silent gate means nothing reads stale from that commit; change both together. Multi-repo sessions inject per-repo status through dist/server.js dispatch, the same path as the status tool. <!-- id:49b7 -->

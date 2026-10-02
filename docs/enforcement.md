@@ -29,25 +29,29 @@ The injected block ends with the standing rules: call `read(name)` before workin
 
 This is the part that catches the write nobody remembers to do. The graph is committed with the code (see [Installation](installation.md)), so the goal is not just recording a change somewhere, it is getting the `.graphene/` update into the same commit as the code it describes.
 
-**Before the commit.** The same `PreToolUse` hook that injects status also watches every `Bash` command for one that matches `git commit`. When it finds one, it reads the currently staged files (`git diff --cached --name-only`) and compares them against every node's `covers` patterns, the same prefix match `stale()` uses. If a node covers a staged file, and no staged path is under `.graphene/`, it injects:
+**Before the commit.** The same `PreToolUse` hook that injects status also watches every `Bash` command for one that matches `git commit`. When it finds one, it reads the currently staged files (`git diff --cached --name-only`) and compares them against every node's `covers` patterns. If a node covers a staged file and its own node file (`.graphene/nodes/<name>.md`) is not staged, it injects:
 
 ```
-You are about to commit. These graphene nodes cover staged files:
+You are about to commit. These graphene nodes cover staged files, but their node files are not staged:
   - <node> (<files>)
 
-Update them NOW (learn / upsert_node / last_commit) and stage the .graphene/ changes, so the graph rides this commit. Then re-run the commit.
+Update them NOW (learn / upsert_node / last_commit) and stage their .graphene/nodes/ files, so the graph rides this commit. A node whose file is not in the commit reads as stale afterwards. Then re-run the commit.
 ```
+
+The check is per node, and it is the rule [staleness](staleness.md#updates-that-ride-the-commit) applies once the commit exists: a change to a node's covered files counts as reviewed when the node's own file changes in the same commit. Staging some other node's file does not quiet it, and a silent gate means no node will read as stale from this commit.
 
 This fires before the commit exists, while the agent can still fold the graph update into it. Like every other injection here, it is additive: it does not deny the tool call, and it does not stop the commit from running if the agent goes ahead anyway.
 
-**After the commit.** A lighter `PostToolUse` follow-up runs once the commit has actually happened, reading the files it touched (`git diff-tree --no-commit-id --name-only -r HEAD`, against the new HEAD). It stays silent when the commit already carried a `.graphene/` change, which is the outcome the pre-commit gate exists to produce, and silent too when the commit touched no covered files at all. Only when the commit touched covered files and left `.graphene/` out does it speak up, naming the affected nodes:
+**After the commit.** A lighter `PostToolUse` follow-up runs once the commit has actually happened, reading the files it touched (`git diff-tree --no-commit-id --name-only -r HEAD`, against the new HEAD). It stays silent when the commit already carried the node file of every node whose covered files it touched, which is the outcome the pre-commit gate exists to produce, and silent too when the commit touched no covered files at all. Only when a node's covered files changed and its node file was left out does it speak up, naming those nodes:
 
 ```
-This commit touched files these graphene nodes cover, but .graphene/ was not part of it:
+This commit touched files these graphene nodes cover, but their node files were not part of it:
   - <node> (<files>)
 
-Update them, then `git commit --amend` (or a follow-up commit), so the graph catches up.
+Update them and set last_commit to this commit, then `git commit --amend` (or a follow-up commit), so the graph catches up.
 ```
+
+Setting `last_commit` to the commit matters for the follow-up route: a later commit that only touches the node file does not vouch for code that changed before it.
 
 **Multi-repo sessions.** Both gates stay single-repo. A commit always runs with its cwd inside one specific repo, so the hook's ordinary repo-root detection already answers the question, with no need to consult the session's full scope list. In a multi-repo session (see [multi-repo sessions](tools.md#multi-repo-sessions)) the gates simply do not fire, the same as they would not for a command run outside any repo at all.
 

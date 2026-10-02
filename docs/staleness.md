@@ -9,7 +9,7 @@ Two fields drive it: `covers` and `last_commit`.
 - **covers** is the set of path patterns a node owns, like `["src/auth/", "src/middleware/auth"]`.
 - **last_commit** is the commit the node was last verified against.
 
-To check a node, graphene asks git for the files that changed between the node's `last_commit` and current HEAD, restricted to the node's `covers` paths. If anything comes back, the node is stale.
+To check a node, graphene asks git for the files that changed between the node's `last_commit` and current HEAD, restricted to the node's `covers` paths. If anything comes back that a commit changed without updating the node alongside it (see [Updates that ride the commit](#updates-that-ride-the-commit)), the node is stale.
 
 This runs in `status()` (injected at session start) and on demand through `stale()`.
 
@@ -19,6 +19,12 @@ This runs in `status()` (injected at session start) and on demand through `stale
 - **untracked**: the node has no `last_commit` at all. There is nothing to diff against, so graphene cannot vouch for it. It needs review and a `last_commit` set to HEAD once verified.
 
 A node with a `last_commit` but no `covers` is never flagged as changed. It has nothing to compare, so it counts as fresh. That is why a node without `covers` is a blind spot: the commit gate and staleness both key off `covers`, and a node that covers nothing is invisible to both.
+
+## Updates that ride the commit
+
+The commit gate asks for a node's update to go into the same commit as the code it describes. That update is written before the commit exists, so the most `last_commit` can name is the commit before it, and a plain diff from there would flag the node's own commit as an unreviewed change. So staleness reads the history between `last_commit` and HEAD commit by commit: a commit that changes a node's covered files and its node file (`.graphene/nodes/<name>.md`) together counts as reviewed. A covered file is stale only if it differs from `last_commit` and some commit changed it without the node file changing alongside it.
+
+Two consequences follow. A later commit that only touches the node file, to add an unrelated observation say, does not vouch for code that changed before it: only moving `last_commit` does that. And an unreviewed change that a later commit reverted does not count, because the file still matches `last_commit`.
 
 ## Choosing covers patterns
 

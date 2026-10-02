@@ -16,6 +16,7 @@ import {
   nodesDir,
   factsDir,
   nodePath,
+  nodeGitPath,
   factPath,
   globalDir,
   globalFactPath,
@@ -296,6 +297,11 @@ describe("path helpers", () => {
     expect(factPath("/repo", "convention", "node-env")).toBe(
       join("/repo", ".graphene", "facts", "convention__node-env.md")
     );
+  });
+
+  it("gives a node's git path repo-relative with forward slashes, validating the name", () => {
+    expect(nodeGitPath("auth")).toBe(".graphene/nodes/auth.md");
+    expect(() => nodeGitPath("../auth")).toThrow("node name");
   });
 
   it("builds the global dir and global fact path under $HOME", () => {

@@ -48,10 +48,6 @@ async function getMultiStatus(scopes) {
   return dispatch({ scopes, globalDir: globalDir() }, "status", {});
 }
 
-function isGrapheneFile(file) {
-  return file === ".graphene" || file.startsWith(".graphene/");
-}
-
 function getStagedFiles(repoRoot) {
   try {
     return execSync("git diff --cached --name-only", {
@@ -79,16 +75,20 @@ function getCommittedFiles(repoRoot) {
 // Matches `files` (either staged paths or the files a commit just touched)
 // against every node's `covers` patterns, prefix-style: a pattern's trailing
 // glob (if any) is stripped, and a file matches if it starts with what
-// remains. Shared by the pre-commit gate (staged files) and the post-commit
+// remains. A node whose own file is among `files` is left out: the graph is
+// riding the same commit as the code, which is the rule staleness applies
+// too, so a node this returns nothing for will not read as stale from these
+// files. Shared by the pre-commit gate (staged files) and the post-commit
 // reminder (committed files) so the two never drift on what "affected" means.
 async function computeAffectedNodes(repoRoot, files) {
   if (files.length === 0) return [];
 
   const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || join(import.meta.dirname, "..");
-  const { listNodes, readNode } = await import(join(pluginRoot, "dist", "store.js"));
+  const { listNodes, readNode, nodeGitPath } = await import(join(pluginRoot, "dist", "store.js"));
 
   const affected = [];
   for (const name of listNodes(repoRoot)) {
+    if (files.includes(nodeGitPath(name))) continue;
     const node = readNode(repoRoot, name);
     if (!node || node.covers.length === 0) continue;
 
@@ -106,39 +106,39 @@ async function computeAffectedNodes(repoRoot, files) {
 
 // PreToolUse gate, fired just before a `git commit` runs. Staged files
 // (rather than the eventual commit's files, which do not exist yet) are
-// compared against node covers. Silent unless there is something staged that
-// a node covers and no `.graphene/` path is staged alongside it -- once
-// `.graphene/` is part of what is about to be committed, the graph is already
-// riding this commit and there is nothing to gate.
+// compared against node covers. Silent unless a node covers something staged
+// and its own node file is not staged alongside it. Once every such node file
+// is part of what is about to be committed, the graph is riding this commit
+// and none of those nodes will read as stale from it.
 async function buildPreCommitMessage(repoRoot) {
   const staged = getStagedFiles(repoRoot);
   if (staged.length === 0) return null;
-  if (staged.some(isGrapheneFile)) return null;
 
   const affected = await computeAffectedNodes(repoRoot, staged);
   if (affected.length === 0) return null;
 
-  return "You are about to commit. These graphene nodes cover staged files:" +
+  return "You are about to commit. These graphene nodes cover staged files, but their node files are not staged:" +
     affected.map(a => `\n  - ${a.name} (${a.files.join(", ")})`).join("") +
-    "\n\nUpdate them NOW (learn / upsert_node / last_commit) and stage the .graphene/ changes, " +
-    "so the graph rides this commit. Then re-run the commit.";
+    "\n\nUpdate them NOW (learn / upsert_node / last_commit) and stage their .graphene/nodes/ files, " +
+    "so the graph rides this commit. A node whose file is not in the commit reads as stale afterwards. " +
+    "Then re-run the commit.";
 }
 
 // PostToolUse follow-up, fired just after `git commit` returns. Now that the
 // pre-commit gate above is the primary enforcement point, this is only a
-// light backstop: silent whenever the commit already carried `.graphene/`
-// changes (the desired end state) or touched no covered files at all.
+// light backstop: silent whenever the commit already carried the node file of
+// every node it touched (the desired end state) or touched no covered files.
 async function buildPostCommitMessage(repoRoot) {
   const committed = getCommittedFiles(repoRoot);
   if (committed.length === 0) return null;
-  if (committed.some(isGrapheneFile)) return null;
 
   const affected = await computeAffectedNodes(repoRoot, committed);
   if (affected.length === 0) return null;
 
-  return "This commit touched files these graphene nodes cover, but .graphene/ was not part of it:" +
+  return "This commit touched files these graphene nodes cover, but their node files were not part of it:" +
     affected.map(a => `\n  - ${a.name} (${a.files.join(", ")})`).join("") +
-    "\n\nUpdate them, then `git commit --amend` (or a follow-up commit), so the graph catches up.";
+    "\n\nUpdate them and set last_commit to this commit, then `git commit --amend` (or a follow-up commit), " +
+    "so the graph catches up.";
 }
 
 // Renders one repo's status the same way regardless of whether it is the

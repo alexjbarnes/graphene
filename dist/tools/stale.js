@@ -1,5 +1,5 @@
-import { listNodes, readNode } from "../store.js";
-import { getChangedFiles } from "../git.js";
+import { listNodes, readNode, nodeGitPath } from "../store.js";
+import { getUnreviewedFiles } from "../git.js";
 export function handleStale(repoRoot, _args) {
     const names = listNodes(repoRoot);
     const staleNodes = [];
@@ -16,7 +16,7 @@ export function handleStale(repoRoot, _args) {
             freshCount++;
             continue;
         }
-        const changed = getChangedFiles(repoRoot, node.last_commit, node.covers);
+        const changed = getUnreviewedFiles(repoRoot, node.last_commit, node.covers, nodeGitPath(node.name));
         if (changed.length > 0) {
             staleNodes.push({ name: node.name, reason: "changed", changed_files: changed });
         }
