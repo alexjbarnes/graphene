@@ -11,7 +11,7 @@ covers:
   - src/types.ts
   - tests/tools/
   - tests/e2e.test.ts
-last_commit: e53773f
+last_commit: ac1233d
 edges:
   - to: file-store type: depends_on reason: every handler reads and writes nodes and facts through src/store.ts
   - to: scope-routing type: depends_on reason: dispatchMulti resolves names and write targets through src/scope.ts

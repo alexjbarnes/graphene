@@ -9,7 +9,7 @@ covers:
   - hooks/
   - src/claude-md.ts
   - tests/hooks/
-last_commit: 7325c61
+last_commit: ac1233d
 edges:
   - to: file-store type: depends_on reason: hook reads status and affected nodes through the store
   - to: mcp-tools type: depends_on reason: multi-repo status injection calls dist/server.js dispatch, the same path as the status tool
