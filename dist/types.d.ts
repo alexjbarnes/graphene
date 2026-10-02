@@ -13,9 +13,16 @@ export interface NodeDetail {
     covers: string[];
     last_commit: string | null;
     metadata: Record<string, unknown>;
-    observations: StoredObservation[];
+    observations_note?: string;
+    observations: Array<StoredObservation & {
+        truncated?: true;
+    }>;
     edges: EdgeWithNeighbor[];
     dependents: EdgeWithNeighbor[];
+}
+export interface ObservationDetail {
+    name: string;
+    observation: StoredObservation;
 }
 export interface IndexEntry {
     name: string;
@@ -25,6 +32,7 @@ export interface IndexEntry {
 export interface SearchResult {
     type: "node" | "observation" | "project_fact" | "global_fact" | "edge";
     node_name: string;
+    id?: string;
     snippet: string;
     score: number;
 }

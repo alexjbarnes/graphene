@@ -22,7 +22,8 @@ Call `stale` to see which nodes need attention, then for each stale node:
 
 - Start with nodes marked "changed" (files modified since last_commit). These have concrete diffs to review.
 - Nodes marked "untracked" (no last_commit) need their last_commit set to HEAD after verifying their content is accurate.
-- Remove observations that are no longer true.
+- Remove observations that are no longer true, or that a newer observation supersedes.
+- If `read(name)` returns an `observations_note`, the node is over the read budget. Split it into nodes by topic and remove superseded observations until it reads in full again.
 - If a node's subsystem was deleted or merged, use `delete_node(name)` to clean it up.
 - After refreshing, the stale report should be empty.
 - The graph lives under `.graphene/` in this repo and is committed with the code. Stage and commit the updated node files, ideally in the same commit as whatever code change prompted the refresh.

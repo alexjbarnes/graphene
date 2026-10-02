@@ -21,20 +21,21 @@ The trigger is what you learned, not whether a node exists. There is always a ho
 - You discovered a boundary, constraint, gotcha, or workaround: \`learn(node, observation)\` or \`project_write()\`
 - The user corrected you or stated a preference: \`project_write()\` if repo-specific, \`global_write()\` if cross-repo. If unsure, ask.
 - You spent 3+ tool calls finding something: record where you found it
+- What you learned replaces an older observation: \`remove_observation()\` the old one in the same step. A node holds current state; git keeps the history.
 
 ### Multi-repo sessions
 A session rooted in a parent directory that holds more than one repo puts every one of them in scope at once. Nodes qualify as \`repo:name\`. A bare name still resolves if it is unique across the repos in scope, otherwise qualify it. Cross-repo edges are rejected: \`link\`, \`unlink\`, and edges passed to \`batch\` require both ends to resolve to the same repo. \`project_read\`, \`project_write\`, and \`project_delete\` take a \`repo\` argument, required once more than one repo is in scope.
 
 ### Tools: reading
 - \`status()\` - auto-injected at session start. Call manually to refresh. Bounded: the node index, stale nodes, and project/global fact keys, never observation or fact bodies.
-- \`read()\` - no args returns full node index. \`read(name)\` returns node detail: entry_points, observations, edges, dependents.
-- \`search(query)\` - search across nodes, observations, project facts, global facts, and edge reasons. Multi-word queries match any word, ranked by relevance. Returns at most the top 20 results, each with a truncated snippet.
+- \`read()\` - no args returns full node index. \`read(name)\` returns node detail: entry_points, observations, edges, dependents. A node over the read budget returns long observations as previews; \`read(name, id)\` returns one in full.
+- \`search(query)\` - search across nodes, observations, project facts, global facts, and edge reasons. Multi-word queries match any word, ranked by relevance. Returns at most the top 20 results, each with a snippet around the match. Observation results carry an \`id\` for \`read(name, id)\`.
 - \`stale()\` - check which nodes have changed files since their last_commit.
 - \`project_read(category?, subject?, repo?)\` - read project facts. No args returns all.
 - \`global_read(category?, subject?)\` - read global facts. No args returns all.
 
 ### Tools: recording
-- \`learn(node, content)\` - append an observation to a node. Use for code knowledge, gotchas, boundaries.
+- \`learn(node, content)\` - append an observation to a node. Use for code knowledge, gotchas, boundaries. One point per observation, in a few sentences. Leave out what the code and its comments already say.
 - \`upsert_node(name, ...)\` - create or update a node. Pass each field as a top-level arg (summary, covers, entry_points, last_commit, metadata, type), the same shape as a node in \`batch\`. Do NOT wrap them in a \`fields\` object. Only provided fields change on update; metadata shallow-merges.
 - \`link(from, to, type, reason)\` - create edge. Types: depends_on, extends, related_to, mirrors. related_to and mirrors are bidirectional.
 - \`batch({nodes, edges, observations})\` - bulk create/update in one transaction.
@@ -43,7 +44,7 @@ A session rooted in a parent directory that holds more than one repo puts every 
 - \`globals_export(path)\` / \`globals_import(path, overwrite?)\` - move global facts between machines as a markdown bundle.
 
 ### Tools: cleanup
-- \`remove_observation(node, id)\` - delete a wrong or outdated observation (id from read response).
+- \`remove_observation(node, id)\` - delete a wrong, outdated, or superseded observation (id from a read or search result).
 - \`unlink(from, to, type?)\` - remove an edge. Omit type to remove all edges between the pair.
 - \`delete_node(name)\` - remove a node and all its edges and observations.
 - \`project_delete(category, subject, repo?)\` - remove a project fact.

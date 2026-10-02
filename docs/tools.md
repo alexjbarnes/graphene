@@ -10,17 +10,21 @@ Returns a bounded snapshot: current HEAD, the node index (name, type, summary, o
 
 In a multi-repo session the shape changes to `{ repos: [...], global_facts }`: one status entry per repo (or a `{ repo, error }` entry if that repo's own status call failed), with `global_facts` reported once for the whole session rather than once per repo.
 
-### `read(name?)`
+### `read(name?, id?)`
 
 With no argument, returns the node index: every node's name, type, and summary. This is the map.
 
 With a `name`, returns the full node: `entry_points`, `covers`, `last_commit`, `metadata`, all observations (with their ids), outgoing edges, and incoming dependents. Each edge and dependent carries the neighbor's summary, so one `read` shows you the node and its immediate context.
 
+The observations are bounded by a read budget of 20,000 characters. Once a node's observations total more than that, each one longer than 200 characters comes back cut to a preview and marked `truncated: true`, and an `observations_note` explains why and says to split the node by topic and remove superseded observations. A node that size is too big to take in as one tool result, and splitting it is the real fix.
+
+With a `name` and an `id`, returns that one observation in full, whatever the node's size: `{ name, observation: { id, content, source } }`. The id comes from a `read(name)` or `search(query)` result.
+
 In a multi-repo session, index and node results include a `repo` field, and `name` accepts `repo:name` to disambiguate.
 
 ### `search(query)`
 
-Full-text search across nodes, observations, project facts, global facts, and edge reasons. Multi-word queries match any word and rank results by how many words hit. Returns at most the top 20 results, each with a snippet truncated to 200 characters rather than the full observation or fact body, plus an `omitted` count whenever more than 20 results matched. Use it when you do not know which node owns what you are looking for.
+Full-text search across nodes, observations, project facts, global facts, and edge reasons. Multi-word queries match any word and rank results by how many words hit. Returns at most the top 20 results, plus an `omitted` count whenever more than 20 results matched. Each result carries a snippet of up to 200 characters rather than the full observation or fact body. The snippet is placed over the match, on the stretch of text holding the most query words, so it shows why the result hit even when that is deep in a long observation. Observation results also carry the observation's `id`, so `read(node_name, id)` fetches the full text without reading the whole node. Use it when you do not know which node owns what you are looking for.
 
 ### `stale()`
 
@@ -38,7 +42,7 @@ The same, for user-level facts that span repos. Never takes a `repo`: global fac
 
 ### `learn(node_name, content, source?)`
 
-Appends an observation to a node. Append-only: it never overwrites an existing observation. The optional `source` records what triggered the learning. This is the workhorse for code knowledge, gotchas, and constraints. `node_name` accepts `repo:name` in a multi-repo session.
+Appends an observation to a node. Append-only: it never overwrites an existing observation. The optional `source` records what triggered the learning. This is the workhorse for code knowledge, gotchas, and constraints. Keep each observation to one point in a few sentences, and leave out what the code and its comments already say. `node_name` accepts `repo:name` in a multi-repo session.
 
 ### `upsert_node(name, ...)`
 
@@ -88,7 +92,7 @@ assume deep Go proficiency, do not explain the basics
 
 ### `remove_observation(node_name, id)`
 
-Deletes one observation by id. `node_name` is the node the observation belongs to; `id` comes from a `read(name)` response. Use it when a recorded fact turns out to be wrong or outdated.
+Deletes one observation by id. `node_name` is the node the observation belongs to; `id` comes from a `read(name)` or `search(query)` result. Use it when a recorded fact turns out to be wrong or outdated, or when a newer observation supersedes it: remove the old one in the same step you record the new one.
 
 ### `unlink(from, to, type?)`
 

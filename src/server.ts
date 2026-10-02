@@ -26,7 +26,7 @@ import { handleBatch } from "./tools/batch.js";
 import { handleStatus, boundedKeys } from "./tools/status.js";
 import { listFacts } from "./store.js";
 import { exportGlobals, importGlobals } from "./globals-sync.js";
-import type { IndexEntry, NodeDetail, SearchResult } from "./types.js";
+import type { IndexEntry, NodeDetail, ObservationDetail, SearchResult } from "./types.js";
 import {
   type RepoScope,
   parseNodeRef,
@@ -56,13 +56,17 @@ const TOOLS = [
   {
     name: "read",
     description:
-      "Read the context graph. No arguments returns the full index (all node names, types, summaries). With a name argument, returns the full node including outgoing edges, incoming dependents with neighbor summaries, and observations. In multi-repo sessions, index and node results include a repo field, and name accepts repo:name to disambiguate.",
+      "Read the context graph. No arguments returns the full index (all node names, types, summaries). With a name argument, returns the full node including outgoing edges, incoming dependents with neighbor summaries, and observations. A node whose observations exceed the read budget returns each long one as a preview marked truncated. With name and id, returns that one observation in full. In multi-repo sessions, index and node results include a repo field, and name accepts repo:name to disambiguate.",
     inputSchema: {
       type: "object" as const,
       properties: {
         name: {
           type: "string",
           description: "Node name to read. Omit for the full index. Accepts repo:name in multi-repo sessions.",
+        },
+        id: {
+          type: "string",
+          description: "Observation id, from a read or search result. With name, returns that one observation in full.",
         },
       },
     },
@@ -71,7 +75,9 @@ const TOOLS = [
     name: "search",
     description:
       "Search across nodes, observations, project facts, global facts, and edge reasons. Multi-word queries " +
-      "match any word and rank by relevance. Returns at most the top 20 results, each with a truncated snippet.",
+      "match any word and rank by relevance. Returns at most the top 20 results, each with a snippet of up to " +
+      "200 characters around the match. Observation results carry an id: read(node_name, id) returns that " +
+      "observation in full.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -120,7 +126,8 @@ const TOOLS = [
   {
     name: "learn",
     description:
-      "Append a learned observation to a node. Observations are append-only and never overwrite existing ones.",
+      "Append a learned observation to a node. Observations are append-only and never overwrite existing ones. " +
+      "Keep each to one point in a few sentences, leaving out what the code and its comments already say.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -322,7 +329,7 @@ const TOOLS = [
   {
     name: "remove_observation",
     description:
-      "Remove a specific observation by ID. Use when a learned fact turns out to be wrong or outdated.",
+      "Remove a specific observation by ID. Use when a learned fact turns out to be wrong or outdated, or a newer observation supersedes it.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -682,6 +689,7 @@ function routeRead(scopes: RepoScope[], args: Record<string, unknown>): unknown 
   const name = args.name as string | undefined;
 
   if (!name) {
+    if (args.id) throw new Error("name is required with id");
     const nodes = scopes.flatMap((scope) => {
       const result = handleRead(scope.root, {}) as { nodes: IndexEntry[] };
       return result.nodes.map((n) => ({ repo: scope.name, ...n }));
@@ -694,7 +702,7 @@ function routeRead(scopes: RepoScope[], args: Record<string, unknown>): unknown 
   }
 
   const resolved = resolveNodeRef(name, scopes);
-  const result = handleRead(resolved.scope.root, { ...args, name: resolved.name }) as NodeDetail;
+  const result = handleRead(resolved.scope.root, { ...args, name: resolved.name }) as NodeDetail | ObservationDetail;
   return { repo: resolved.scope.name, ...result };
 }
 

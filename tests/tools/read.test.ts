@@ -133,4 +133,72 @@ describe("read", () => {
       expect(obs[0].id).toBe(id);
     });
   });
+
+  describe("read budget", () => {
+    it("returns every observation in full while the node is within budget", () => {
+      handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem" });
+      handleLearn(repo.repoRoot, { node_name: "auth", content: "a".repeat(10_000) });
+      handleLearn(repo.repoRoot, { node_name: "auth", content: "b".repeat(10_000) });
+
+      const result = handleRead(repo.repoRoot, { name: "auth" }) as Record<string, unknown>;
+      const obs = result.observations as Array<Record<string, unknown>>;
+      expect(result).not.toHaveProperty("observations_note");
+      expect(obs.map((o) => (o.content as string).length)).toEqual([10_000, 10_000]);
+      expect(obs[0]).not.toHaveProperty("truncated");
+    });
+
+    it("cuts long observations to previews once the node is over budget, leaving short ones whole", () => {
+      handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem" });
+      const long = handleLearn(repo.repoRoot, { node_name: "auth", content: "a".repeat(15_000) });
+      handleLearn(repo.repoRoot, { node_name: "auth", content: "b".repeat(6_000), source: "debugging" });
+      handleLearn(repo.repoRoot, { node_name: "auth", content: "short and whole" });
+
+      const result = handleRead(repo.repoRoot, { name: "auth" }) as Record<string, unknown>;
+      const obs = result.observations as Array<Record<string, unknown>>;
+      expect(obs).toHaveLength(3);
+      expect(obs[0]).toEqual({ id: long.id, content: "a".repeat(200) + "...", source: null, truncated: true });
+      expect(obs[1].source).toBe("debugging");
+      expect(obs[1].truncated).toBe(true);
+      expect(obs[2]).not.toHaveProperty("truncated");
+      expect(obs[2].content).toBe("short and whole");
+
+      const note = result.observations_note as string;
+      expect(note).toContain("3 observations total 21015 characters");
+      expect(note).toContain("read(name, id)");
+      expect(note).toContain("split it into nodes by topic");
+    });
+
+    it("lists the note ahead of the observations it explains", () => {
+      handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem" });
+      handleLearn(repo.repoRoot, { node_name: "auth", content: "a".repeat(20_001) });
+
+      const keys = Object.keys(handleRead(repo.repoRoot, { name: "auth" }));
+      expect(keys.indexOf("observations_note")).toBe(keys.indexOf("observations") - 1);
+    });
+  });
+
+  describe("single observation (name + id)", () => {
+    it("returns one observation in full, even from a node over the read budget", () => {
+      handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem" });
+      const content = "c".repeat(25_000);
+      const { id } = handleLearn(repo.repoRoot, { node_name: "auth", content, source: "incident" });
+      handleLearn(repo.repoRoot, { node_name: "auth", content: "unrelated" });
+
+      const result = handleRead(repo.repoRoot, { name: "auth", id });
+      expect(result).toEqual({ name: "auth", observation: { id, content, source: "incident" } });
+    });
+
+    it("throws for an id the node does not have", () => {
+      handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem" });
+      handleLearn(repo.repoRoot, { node_name: "auth", content: "Test observation" });
+
+      expect(() => handleRead(repo.repoRoot, { name: "auth", id: "ffff" })).toThrow(
+        "Observation not found: ffff in node auth"
+      );
+    });
+
+    it("throws for an id without a name rather than returning the index", () => {
+      expect(() => handleRead(repo.repoRoot, { id: "ffff" })).toThrow("name is required with id");
+    });
+  });
 });

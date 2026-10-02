@@ -12,6 +12,7 @@ covers:
 last_commit: 7325c61
 edges:
   - to: file-store type: depends_on reason: hook reads status and affected nodes through the store
+  - to: mcp-tools type: depends_on reason: multi-repo status injection calls dist/server.js dispatch, the same path as the status tool
 ---
 
 - Rules block (the '## Graphene Context Graph' enforcement text) is injected by the SessionStart branch in hooks/graphene-guard.mjs, NOT written into CLAUDE.md. SessionStart fires on startup, resume, clear, and compact, so the rules re-enter context after every compaction. Registered in hooks/hooks.json under a new SessionStart event. <!-- id:4df0 -->
@@ -24,3 +25,4 @@ edges:
 - phase 03 (9276b4c): rules text project_read/write/delete lines in src/claude-md.ts gained the optional repo arg for multi-repo sessions. Full rules rewrite still owed in phase 06. <!-- id:f6c7 -->
 - phase 04 (19cf28f): rules text gained one line for globals_export/globals_import in the Tools: recording section. <!-- id:dc18 -->
 - phase 06 (7325c61): enforcement point moved to PreToolUse on git commit, computed from STAGED files vs node covers, silent when .graphene/ is staged alongside (graph riding the commit is the end state). PostToolUse is now only a light amend reminder when a commit touched covered files without .graphene/. Multi-repo sessions inject per-repo sectioned status through dist/server.js dispatch, the same code path as the status tool, so hook and tool can never drift. GRAPHENE_RULES rewritten: committed graph, update-before-commit rule, bounded status wording, multi-repo qualification section, new red-flag row for post-commit rationalization. <!-- id:ad7b -->
+- Rules text gained a supersede rule (remove the old observation when recording its replacement) and a brevity rule for learn() because real nodes reached 60K+ characters, mostly superseded history and restated code comments. The read budget in src/tools/read.ts is the mechanical backstop if agents ignore the wording. <!-- id:3399 -->

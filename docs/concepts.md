@@ -39,7 +39,9 @@ An observation is a single learned fact attached to a node. Observations are app
 
 Use them for the things you only learn by reading the code: a non-obvious constraint, a workaround, a gotcha, the reason a function looks wrong but is not. When `read(name)` returns a node, its observations come with it, so the next session inherits the discovery without re-deriving it.
 
-When an observation turns out to be wrong, remove it by id with `remove_observation`. Do not leave a false note for a future session to trust.
+When an observation turns out to be wrong, remove it by id with `remove_observation`. Do not leave a false note for a future session to trust. The same goes for an observation a newer one supersedes: remove the old one when you record the new one. A node holds current state, and git keeps the history.
+
+Keep each observation to one point in a few sentences, and leave out what the code and its comments already say. Observations that grow into essays, and history that never gets pruned, make a node too big to read: past 20,000 characters of observations, `read(name)` returns long ones as previews, and the agent has to fetch the rest one at a time with `read(name, id)`. When a node gets there, split it into nodes by topic.
 
 An observation's id is a short content hash, computed from the observation text when it is written. `read(name)` shows the id next to every observation, so there is never a separate lookup step before you can remove one.
 

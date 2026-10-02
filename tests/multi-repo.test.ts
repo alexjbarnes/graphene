@@ -72,6 +72,18 @@ describe("multi-repo dispatch", () => {
     );
   });
 
+  it("reads one observation by qualified name and id, and rejects an id without a name", () => {
+    dispatch(ctx, "upsert_node", { name: "portal:auth", type: "subsystem" });
+    const { id } = dispatch(ctx, "learn", { node_name: "portal:auth", content: "Uses JWT" }) as { id: string };
+
+    expect(dispatch(ctx, "read", { name: "portal:auth", id })).toEqual({
+      repo: "portal",
+      name: "auth",
+      observation: { id, content: "Uses JWT", source: null },
+    });
+    expect(() => dispatch(ctx, "read", { id })).toThrow("name is required with id");
+  });
+
   it("routes a create by cwd-relative covers and rewrites them repo-relative in the stored file", () => {
     process.chdir(parent);
     dispatch(ctx, "upsert_node", {

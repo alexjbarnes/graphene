@@ -1,13 +1,27 @@
-import { listNodes, readNode } from "../store.js";
-import type { IndexEntry, NodeDetail, EdgeWithNeighbor } from "../types.js";
+import { listNodes, readNode, type StoredObservation } from "../store.js";
+import type { IndexEntry, NodeDetail, ObservationDetail, EdgeWithNeighbor } from "../types.js";
+
+// Past this many characters of observation text, read(name) cuts each long
+// observation to a preview instead of returning it whole. Real nodes have
+// grown past 60,000 characters, too big for an agent to take in as one tool
+// result; read(name, id) still returns any single observation in full.
+const READ_BUDGET = 20_000;
+const PREVIEW_LIMIT = 200;
+
+function preview(obs: StoredObservation): StoredObservation & { truncated?: true } {
+  if (obs.content.length <= PREVIEW_LIMIT) return obs;
+  return { ...obs, content: obs.content.slice(0, PREVIEW_LIMIT) + "...", truncated: true };
+}
 
 export function handleRead(
   repoRoot: string,
   args: Record<string, unknown>
-): { nodes: IndexEntry[] } | NodeDetail {
+): { nodes: IndexEntry[] } | NodeDetail | ObservationDetail {
   const name = args.name as string | undefined;
+  const id = args.id as string | undefined;
 
   if (!name) {
+    if (id) throw new Error("name is required with id");
     const nodes: IndexEntry[] = listNodes(repoRoot).map((n) => {
       const node = readNode(repoRoot, n)!;
       return { name: node.name, type: node.type, summary: node.summary };
@@ -17,6 +31,12 @@ export function handleRead(
 
   const node = readNode(repoRoot, name);
   if (!node) throw new Error(`Node not found: ${name}`);
+
+  if (id) {
+    const observation = node.observations.find((o) => o.id === id);
+    if (!observation) throw new Error(`Observation not found: ${id} in node ${name}`);
+    return { name: node.name, observation };
+  }
 
   const edges: EdgeWithNeighbor[] = node.edges.map((e) => {
     const neighbor = readNode(repoRoot, e.to);
@@ -37,6 +57,15 @@ export function handleRead(
     }
   }
 
+  const totalChars = node.observations.reduce((sum, o) => sum + o.content.length, 0);
+  const overBudget = totalChars > READ_BUDGET;
+  const observationsNote =
+    `This node's ${node.observations.length} observations total ${totalChars} characters, over the ` +
+    `${READ_BUDGET}-character read budget, so each one longer than ${PREVIEW_LIMIT} characters is cut to a ` +
+    `preview marked truncated. Call read(name, id) for one in full, or search(query) to find the right ones. ` +
+    `To bring the node back under budget, split it into nodes by topic and remove superseded observations ` +
+    `with remove_observation.`;
+
   return {
     name: node.name,
     type: node.type,
@@ -45,7 +74,8 @@ export function handleRead(
     covers: node.covers,
     last_commit: node.last_commit,
     metadata: node.metadata,
-    observations: node.observations,
+    ...(overBudget ? { observations_note: observationsNote } : {}),
+    observations: overBudget ? node.observations.map(preview) : node.observations,
     edges,
     dependents,
   };

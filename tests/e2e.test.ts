@@ -158,6 +158,22 @@ describe("e2e: compiled server over MCP stdio", () => {
     expect(parsed.omitted).toBe(5);
   });
 
+  it("search hands back an observation id that read(name, id) resolves to the full text", async () => {
+    await session.client.callTool({ name: "upsert_node", arguments: { name: "pty", type: "subsystem" } });
+    const content = "x".repeat(1000) + " the title request eats scripted replies " + "y".repeat(1000);
+    await session.client.callTool({ name: "learn", arguments: { node_name: "pty", content } });
+
+    const searchResult = await session.client.callTool({ name: "search", arguments: { query: "scripted" } });
+    const [hit] = parseResult<{ results: Array<{ node_name: string; id: string; snippet: string }> }>(
+      searchResult as CallToolResult
+    ).results;
+    expect(hit.snippet).toContain("eats scripted replies");
+
+    const readResult = await session.client.callTool({ name: "read", arguments: { name: hit.node_name, id: hit.id } });
+    const read = parseResult<{ observation: { content: string } }>(readResult as CallToolResult);
+    expect(read.observation.content).toBe(content);
+  });
+
   it("batch with an invalid edge writes nothing", async () => {
     const batchResult = (await session.client.callTool({
       name: "batch",

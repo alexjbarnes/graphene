@@ -187,4 +187,46 @@ describe("search", () => {
     expect(obsResult.snippet.length).toBe(203);
     expect(obsResult.snippet.endsWith("...")).toBe(true);
   });
+
+  it("places the snippet over a match deep in a long observation", () => {
+    handleUpsertNode(repo.repoRoot, { name: "pty", type: "subsystem" });
+    const content = "x".repeat(1000) + " retyped messages ticked consent boxes " + "y".repeat(1000);
+    handleLearn(repo.repoRoot, { node_name: "pty", content });
+
+    const result = handleSearch(repo.repoRoot, global.dir, { query: "consent" });
+    const snippet = result.results[0].snippet;
+    expect(snippet).toContain("ticked consent boxes");
+    expect(snippet.startsWith("...")).toBe(true);
+    expect(snippet.endsWith("...")).toBe(true);
+    expect(snippet.length).toBe(206);
+  });
+
+  it("places the snippet where the most query words cluster, not on the first hit", () => {
+    handleUpsertNode(repo.repoRoot, { name: "pty", type: "subsystem" });
+    const content =
+      "consent " + "x".repeat(600) + " the title request eats the scripted replies meant for consent " + "y".repeat(600);
+    handleLearn(repo.repoRoot, { node_name: "pty", content });
+
+    const result = handleSearch(repo.repoRoot, global.dir, { query: "title scripted consent" });
+    expect(result.results[0].snippet).toContain("title request eats the scripted replies meant for consent");
+  });
+
+  it("keeps the snippet inside the text when the match sits at its end", () => {
+    handleUpsertNode(repo.repoRoot, { name: "pty", type: "subsystem" });
+    handleLearn(repo.repoRoot, { node_name: "pty", content: "x".repeat(500) + " endmatch" });
+
+    const snippet = handleSearch(repo.repoRoot, global.dir, { query: "endmatch" }).results[0].snippet;
+    expect(snippet).toBe("..." + ("x".repeat(500) + " endmatch").slice(-200));
+  });
+
+  it("gives observation results the id read(name, id) takes, and no id on other result types", () => {
+    handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem", summary: "token handling" });
+    const { id } = handleLearn(repo.repoRoot, { node_name: "auth", content: "token refresh races on resume" });
+
+    const result = handleSearch(repo.repoRoot, global.dir, { query: "token" });
+    const obsResult = result.results.find((r) => r.type === "observation")!;
+    const nodeResult = result.results.find((r) => r.type === "node")!;
+    expect(obsResult.id).toBe(id);
+    expect(nodeResult).not.toHaveProperty("id");
+  });
 });
