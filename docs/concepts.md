@@ -41,7 +41,7 @@ Use them for the things you only learn by reading the code: a non-obvious constr
 
 When an observation turns out to be wrong, remove it by id with `remove_observation`. Do not leave a false note for a future session to trust. The same goes for an observation a newer one supersedes: remove the old one when you record the new one. A node holds current state, and git keeps the history.
 
-Keep each observation to one point in a few sentences, and leave out what the code and its comments already say. Observations that grow into essays, and history that never gets pruned, make a node too big to read: past 20,000 characters of observations, `read(name)` returns long ones as previews, and the agent has to fetch the rest one at a time with `read(name, id)`. When a node gets there, split it into nodes by topic.
+Keep each observation to one point in a few sentences, and leave out what the code and its comments already say. Observations that grow into essays, and history that never gets pruned, make a node too big to read in one go. So `learn` caps both: an observation holds at most 1,500 characters, and a node at most 20,000 characters of observations, its read budget. A refusal lists the node's largest observations, so the fix is to remove superseded ones or split the node by topic, then record. A node that grew past the budget before the limit existed still reads, with long observations returned as previews to fetch one at a time with `read(name, id)`.
 
 An observation's id is a short content hash, computed from the observation text when it is written. `read(name)` shows the id next to every observation, so there is never a separate lookup step before you can remove one.
 

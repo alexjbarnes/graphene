@@ -2,6 +2,7 @@ import { execSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
+import { readNode, writeNode, observationId } from "../src/store.js";
 
 export interface TestRepo {
   path: string;
@@ -69,4 +70,24 @@ export function createTestGlobalDir(): TestGlobalDir {
     dir,
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };
+}
+
+// Writes observations straight into a node file, past learn()'s size limits:
+// the shape of a node that grew before those limits existed, or was edited by
+// hand. Returns the new observations' ids, in order.
+export function seedObservations(
+  repoRoot: string,
+  name: string,
+  observations: Array<{ content: string; source?: string }>
+): string[] {
+  const node = readNode(repoRoot, name);
+  if (!node) throw new Error(`seedObservations: no node ${name}`);
+  const ids = new Set(node.observations.map((o) => o.id));
+  const added = observations.map(({ content, source }) => {
+    const id = observationId(content, ids);
+    ids.add(id);
+    return { id, content, source: source ?? null };
+  });
+  writeNode(repoRoot, { ...node, observations: [...node.observations, ...added] });
+  return added.map((o) => o.id);
 }

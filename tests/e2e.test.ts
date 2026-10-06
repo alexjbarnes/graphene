@@ -160,7 +160,7 @@ describe("e2e: compiled server over MCP stdio", () => {
 
   it("search hands back an observation id that read(name, id) resolves to the full text", async () => {
     await session.client.callTool({ name: "upsert_node", arguments: { name: "pty", type: "subsystem" } });
-    const content = "x".repeat(1000) + " the title request eats scripted replies " + "y".repeat(1000);
+    const content = "x".repeat(600) + " the title request eats scripted replies " + "y".repeat(600);
     await session.client.callTool({ name: "learn", arguments: { node_name: "pty", content } });
 
     const searchResult = await session.client.callTool({ name: "search", arguments: { query: "scripted" } });

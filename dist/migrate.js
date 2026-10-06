@@ -1,8 +1,8 @@
-import { existsSync, readFileSync, renameSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { writeNode, writeFact, factsDir, grapheneDir, observationId, isValidSlug, writeFileAtomic, } from "./store.js";
+import { writeNode, writeFact, nodesDir, factsDir, grapheneDir, observationId, isValidSlug, writeFileAtomic, } from "./store.js";
 // --- lazy node:sqlite loading ---
 //
 // node:sqlite needs Node >= 22.5 and prints an ExperimentalWarning on first
@@ -225,10 +225,16 @@ function rewriteGitignore(repoRoot) {
     if (changed)
         writeFileAtomic(path, rewritten.join("\n"));
 }
+function hasMarkdownFiles(dir) {
+    return existsSync(dir) && readdirSync(dir).some((f) => f.endsWith(".md"));
+}
 export function migrateRepo(repoRoot) {
     const dbPath = legacyRepoDbPath(repoRoot);
     if (!existsSync(dbPath)) {
         return { migrated: false, nodes: 0, facts: 0, renamed: [] };
+    }
+    if (hasMarkdownFiles(nodesDir(repoRoot)) || hasMarkdownFiles(factsDir(repoRoot))) {
+        return { migrated: false, nodes: 0, facts: 0, renamed: [], leftover: true };
     }
     const { DatabaseSync } = loadSqlite();
     const db = new DatabaseSync(dbPath, { readOnly: true });
@@ -262,6 +268,9 @@ export function migrateGlobal(globalDirPath) {
     const dbPath = legacyGlobalDbPath();
     if (!existsSync(dbPath)) {
         return { migrated: false, facts: 0, renamed: [] };
+    }
+    if (hasMarkdownFiles(globalDirPath)) {
+        return { migrated: false, facts: 0, renamed: [], leftover: true };
     }
     const { DatabaseSync } = loadSqlite();
     const db = new DatabaseSync(dbPath, { readOnly: true });

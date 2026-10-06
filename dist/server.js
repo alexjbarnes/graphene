@@ -19,7 +19,7 @@ import { handleGlobalDelete } from "./tools/global-delete.js";
 import { handleProjectRead } from "./tools/project-read.js";
 import { handleProjectWrite } from "./tools/project-write.js";
 import { handleProjectDelete } from "./tools/project-delete.js";
-import { handleBatch } from "./tools/batch.js";
+import { handleBatch, planBatch } from "./tools/batch.js";
 import { handleStatus, boundedKeys } from "./tools/status.js";
 import { listFacts } from "./store.js";
 import { exportGlobals, importGlobals } from "./globals-sync.js";
@@ -103,7 +103,10 @@ const TOOLS = [
     {
         name: "learn",
         description: "Append a learned observation to a node. Observations are append-only and never overwrite existing ones. " +
-            "Keep each to one point in a few sentences, leaving out what the code and its comments already say.",
+            "Keep each to one point in a few sentences, leaving out what the code and its comments already say. " +
+            "Refused over 1,500 characters, or when it would take the node past its 20,000-character read budget: " +
+            "the error lists the node's largest observations, so remove superseded ones or split the node by topic, " +
+            "then record it.",
         inputSchema: {
             type: "object",
             properties: {
@@ -318,7 +321,7 @@ const TOOLS = [
     },
     {
         name: "batch",
-        description: "Create or update multiple nodes, edges, and observations in a single transaction. Pass three top-level arrays: nodes, edges, observations. Each node object uses the same fields as upsert_node (name required, plus summary, covers, entry_points, last_commit). Every node should include summary, covers, entry_points, and last_commit.",
+        description: "Create or update multiple nodes, edges, and observations in a single transaction. Pass three top-level arrays: nodes, edges, observations. Each node object uses the same fields as upsert_node (name required, plus summary, covers, entry_points, last_commit). Every node should include summary, covers, entry_points, and last_commit. Observations follow learn's size limits, with each node's additions in the batch counted together. If anything fails, nothing is written.",
         inputSchema: {
             type: "object",
             properties: {
@@ -709,8 +712,10 @@ function routeUpsertNode(scopes, args) {
 }
 const BATCH_KEYS = new Set(["nodes", "edges", "observations"]);
 // Resolves every node/edge/observation in the batch to a scope up front
-// (nothing is written until every item resolves cleanly), then runs the
-// existing per-repo handleBatch once per scope. Node creates placed earlier
+// (nothing is written until every item resolves cleanly), then plans each
+// scope's share with the per-repo planBatch, and commits only once every
+// share has planned cleanly, so an error in one repo's share (a node over its
+// observation budget, say) writes nothing in any repo. Node creates placed earlier
 // in this same batch are visible to later edges/observations that reference
 // them by bare name, even though nothing has hit disk yet.
 function routeBatch(scopes, args) {
@@ -799,13 +804,14 @@ function routeBatch(scopes, args) {
         const r = resolveItemRef(nodeName);
         bucket(r.scope).observations.push({ ...obs, node_name: r.name });
     }
+    const plans = [...byScope].map(([scope, items]) => planBatch(scope.root, {
+        ...(items.nodes.length > 0 ? { nodes: items.nodes } : {}),
+        ...(items.edges.length > 0 ? { edges: items.edges } : {}),
+        ...(items.observations.length > 0 ? { observations: items.observations } : {}),
+    }));
     const combined = { nodes_created: 0, nodes_updated: 0, edges_created: 0, observations_added: 0 };
-    for (const [scope, items] of byScope) {
-        const result = handleBatch(scope.root, {
-            ...(items.nodes.length > 0 ? { nodes: items.nodes } : {}),
-            ...(items.edges.length > 0 ? { edges: items.edges } : {}),
-            ...(items.observations.length > 0 ? { observations: items.observations } : {}),
-        });
+    for (const { result, commit } of plans) {
+        commit();
         combined.nodes_created += result.nodes_created;
         combined.nodes_updated += result.nodes_updated;
         combined.edges_created += result.edges_created;

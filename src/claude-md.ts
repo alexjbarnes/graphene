@@ -12,7 +12,7 @@ export const GRAPHENE_RULES = `## Graphene Context Graph
 
 ### Rules
 1. Do NOT read files, grep, or explore until you have called \`read(name)\` on every relevant node. The graph status is injected automatically on your first tool call. Read it. It shows a bounded snapshot: the node index, counts, and fact keys, never bodies. Call \`read(name)\`, \`project_read()\`, or \`global_read()\` for actual content.
-2. Do NOT use auto-memory. Graphene replaces it. Use \`project_write()\` or \`global_write()\`.
+2. Do NOT use auto-memory. Graphene replaces it. Use \`project_write()\` or \`global_write()\`, and move any existing memory files into the graph with \`/graphene:migrate-memory\`.
 3. You MUST record discoveries immediately. Not later. Not after the push. Now.
 4. The graph lives in this repo, under \`.graphene/\`, and is committed with the code. Update affected nodes BEFORE \`git commit\` and stage the \`.graphene/\` changes, so the graph rides the same commit as the code it describes. Bumping \`last_commit\` alone is still not sufficient.
 5. If the graph is empty, run \`/graphene:init\` or populate with \`batch()\` before doing anything else.
@@ -37,10 +37,10 @@ A session rooted in a parent directory that holds more than one repo puts every 
 - \`global_read(category?, subject?)\` - read global facts. No args returns all.
 
 ### Tools: recording
-- \`learn(node, content)\` - append an observation to a node. Use for code knowledge, gotchas, boundaries. One point per observation, in a few sentences. Leave out what the code and its comments already say.
+- \`learn(node, content)\` - append an observation to a node. Use for code knowledge, gotchas, boundaries. One point per observation, in a few sentences, at most 1,500 characters. Leave out what the code and its comments already say. A node holds at most 20,000 characters of observations: when \`learn()\` refuses for that, remove superseded observations or split the node by topic, then record.
 - \`upsert_node(name, ...)\` - create or update a node. Pass each field as a top-level arg (summary, covers, entry_points, last_commit, metadata, type), the same shape as a node in \`batch\`. Do NOT wrap them in a \`fields\` object. Only provided fields change on update; metadata shallow-merges.
 - \`link(from, to, type, reason)\` - create edge. Types: depends_on, extends, related_to, mirrors. related_to and mirrors are bidirectional.
-- \`batch({nodes, edges, observations})\` - bulk create/update in one transaction.
+- \`batch({nodes, edges, observations})\` - bulk create/update in one transaction. Observations follow \`learn()\`'s limits.
 - \`project_write(category, subject, content, repo?)\` - repo-specific conventions, decisions, preferences.
 - \`global_write(category, subject, content)\` - cross-repo user preferences.
 - \`globals_export(path)\` / \`globals_import(path, overwrite?)\` - move global facts between machines as a markdown bundle.
@@ -62,6 +62,7 @@ A session rooted in a parent directory that holds more than one repo puts every 
 | "This change is too small to record" | Small discoveries compound. Record it. |
 | "This is just a fix, not a discovery" | Constraints and boundaries ARE discoveries. Record them. |
 | "No node covers this file, so nothing to record" | Wrong. Absence of a node is a gap. Create one if it is a real subsystem, else \`project_write()\` the convention. |
+| "The node is full, so I'll skip recording this" | No. Make room: remove superseded observations or split the node by topic, then record it. |
 | "I'll keep this in memory instead" | No. Graphene replaces memory. Use project_write or global_write. |
 | "I'll update the graph after committing" | Too late. The commit gate told you before: update nodes first so the graph rides the same commit. |`;
 

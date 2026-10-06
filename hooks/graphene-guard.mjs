@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { execSync } from "node:child_process";
-import { join } from "node:path";
+import { readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { readState, writeState, cleanupStaleSessions } from "./lib/state.mjs";
 
 function getRepoRoot() {
@@ -46,6 +47,32 @@ async function getMultiStatus(scopes) {
   const { dispatch } = await import(join(pluginRoot, "dist", "server.js"));
   const { globalDir } = await import(join(pluginRoot, "dist", "store.js"));
   return dispatch({ scopes, globalDir: globalDir() }, "status", {});
+}
+
+// Claude Code keeps a project's auto-memory beside its session transcripts,
+// in <project dir>/memory/. Graphene replaces auto-memory, so any files still
+// there are flagged at session start for /graphene:migrate-memory. The folder
+// comes from transcript_path rather than being rebuilt from cwd, so it is
+// wherever Claude Code actually put it.
+const MEMORY_FILES_SHOWN = 10;
+
+function memoryNotice(transcriptPath) {
+  if (!transcriptPath) return null;
+  const dir = join(dirname(transcriptPath), "memory");
+  let files;
+  try {
+    files = readdirSync(dir).filter((f) => f.endsWith(".md")).sort();
+  } catch {
+    return null;
+  }
+  if (files.length === 0) return null;
+
+  const shown = files.length > MEMORY_FILES_SHOWN
+    ? [...files.slice(0, MEMORY_FILES_SHOWN), `+${files.length - MEMORY_FILES_SHOWN} more`]
+    : files;
+  return `This project's auto-memory folder, ${dir}, still holds ${files.length} ` +
+    `${files.length === 1 ? "file" : "files"}: ${shown.join(", ")}. ` +
+    "Graphene replaces auto-memory: run /graphene:migrate-memory to move them into the graph.";
 }
 
 function getStagedFiles(repoRoot) {
@@ -264,10 +291,11 @@ async function main() {
     try {
       const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || join(import.meta.dirname, "..");
       const { GRAPHENE_RULES } = await import(join(pluginRoot, "dist", "claude-md.js"));
+      const notice = memoryNotice(input.transcript_path);
       process.stdout.write(JSON.stringify({
         hookSpecificOutput: {
           hookEventName: "SessionStart",
-          additionalContext: GRAPHENE_RULES,
+          additionalContext: notice ? `${GRAPHENE_RULES}\n\n${notice}` : GRAPHENE_RULES,
         },
       }));
     } catch {}

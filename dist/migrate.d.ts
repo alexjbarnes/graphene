@@ -6,11 +6,13 @@ export interface MigrateRepoResult {
     nodes: number;
     facts: number;
     renamed: string[];
+    leftover?: true;
 }
 export declare function migrateRepo(repoRoot: string): MigrateRepoResult;
 export interface MigrateGlobalResult {
     migrated: boolean;
     facts: number;
     renamed: string[];
+    leftover?: true;
 }
 export declare function migrateGlobal(globalDirPath: string): MigrateGlobalResult;

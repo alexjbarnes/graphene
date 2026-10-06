@@ -9,20 +9,17 @@ covers:
   - hooks/
   - src/claude-md.ts
   - tests/hooks/
-last_commit: ff10d46
+last_commit: c544f65
 edges:
   - to: file-store type: depends_on reason: hook reads status and affected nodes through the store
   - to: mcp-tools type: depends_on reason: multi-repo status injection calls dist/server.js dispatch, the same path as the status tool
+  - to: skills type: related_to reason: the SessionStart memory notice and rule 2 name /graphene:migrate-memory, so a rename must change both
 ---
 
 - Rules block (the '## Graphene Context Graph' enforcement text) is injected by the SessionStart branch in hooks/graphene-guard.mjs, NOT written into CLAUDE.md. SessionStart fires on startup, resume, clear, and compact, so the rules re-enter context after every compaction. Registered in hooks/hooks.json under a new SessionStart event. <!-- id:4df0 -->
 - Single source of truth for the rules text is src/claude-md.ts (export GRAPHENE_RULES). The hook imports it from compiled dist/claude-md.js so the hook and server never drift. Must rebuild dist after editing the rules. <!-- id:68aa -->
 - Migration away from the old write-to-CLAUDE.md behavior: src/claude-md.ts stripGrapheneBlock() removes any legacy <!-- graphene --> block from a repo's CLAUDE.md. server.ts oninitialized calls it on startup. It preserves surrounding user content and deletes CLAUDE.md if the block was its only content. Idempotent: no-op when the start marker is absent. <!-- id:c949 -->
-- Deployment caveat: this change only goes live after the plugin is rebuilt, version + marketplace SHA bumped, and reinstalled. The currently installed plugin still runs the OLD write-to-CLAUDE.md path until reinstall, so it will recreate CLAUDE.md on session start in the interim. <!-- id:9de7 -->
-- Shipped in v0.9.9: code change in commit 70a400e, released via bump commit cf59252. This is the first version where rules come from the SessionStart hook rather than a committed CLAUDE.md block. <!-- id:ccae -->
-- v0.9.10: corrected the upsert_node signature in the injected rules (src/claude-md.ts GRAPHENE_RULES) from `upsert_node(name, fields)` to `upsert_node(name, ...)` with an explicit do-not-wrap note. Part of the silent-drop fix in src/tools/upsert-node.ts. Fix commit 0140dc7, released 483e523. See gotcha/upsert-node-input-contract. <!-- id:974a -->
-- files branch (phase 02, commit a905a6f): hook's getStatus and getAffectedNodes now read the markdown file store via dist/store.js (listNodes/readNode), no database. formatStatus renders the bounded status shape: per-node observation counts, fact KEYS only (project_facts.count/keys), never observation or fact bodies. remove_observation rules line in src/claude-md.ts updated to (node, id). Commit-gate flip to before-commit guidance still pending in phase 06. <!-- id:e385 -->
-- phase 03 (9276b4c): rules text project_read/write/delete lines in src/claude-md.ts gained the optional repo arg for multi-repo sessions. Full rules rewrite still owed in phase 06. <!-- id:f6c7 -->
-- phase 04 (19cf28f): rules text gained one line for globals_export/globals_import in the Tools: recording section. <!-- id:dc18 -->
-- Rules text gained a supersede rule (remove the old observation when recording its replacement) and a brevity rule for learn() because real nodes reached 60K+ characters, mostly superseded history and restated code comments. The read budget in src/tools/read.ts is the mechanical backstop if agents ignore the wording. <!-- id:3399 -->
 - The commit gate (PreToolUse on git commit, from STAGED files) and the post-commit reminder work per node: a node is flagged when its covers match a file in the commit but its own .graphene/nodes/<name>.md is not in it. That is the staleness rule in src/git.ts getUnreviewedFiles, so a silent gate means nothing reads stale from that commit; change both together. Multi-repo sessions inject per-repo status through dist/server.js dispatch, the same path as the status tool. <!-- id:49b7 -->
+- GRAPHENE_RULES tells agents to remove an observation in the same step as recording its replacement, and to keep each to one point of at most 1,500 characters. When learn() refuses because a node is full, they must make room (remove superseded observations or split the node by topic) and then record; a red-flag row covers skipping the recording instead. The limits themselves are enforced in src/budget.ts. <!-- id:ca30 -->
+- Status injection on the first tool call renders the bounded status through formatStatus: node index with observation counts, stale nodes, and project/global fact keys, never observation or fact bodies. The hook loads the store and server from compiled dist/, so it only sees src changes after a rebuild. <!-- id:4fd3 -->
+- SessionStart appends a memory notice when the project's auto-memory folder holds any .md file. memoryNotice in hooks/graphene-guard.mjs takes the folder from the hook input's transcript_path (<project dir>/memory, beside the transcripts) instead of rebuilding Claude Code's folder name from cwd, lists up to 10 files, and names /graphene:migrate-memory, so rename the skill and the notice together. <!-- id:556e -->

@@ -1,11 +1,11 @@
 import { listNodes, readNode, type StoredObservation } from "../store.js";
+import { READ_BUDGET } from "../budget.js";
 import type { IndexEntry, NodeDetail, ObservationDetail, EdgeWithNeighbor } from "../types.js";
 
-// Past this many characters of observation text, read(name) cuts each long
-// observation to a preview instead of returning it whole. Real nodes have
-// grown past 60,000 characters, too big for an agent to take in as one tool
-// result; read(name, id) still returns any single observation in full.
-const READ_BUDGET = 20_000;
+// learn() and batch() refuse writes past READ_BUDGET, but a node can still
+// hold more: one that grew before that limit existed, or was edited by hand.
+// read(name) then cuts each long observation to a preview instead of
+// returning it whole; read(name, id) still returns any one in full.
 const PREVIEW_LIMIT = 200;
 
 function preview(obs: StoredObservation): StoredObservation & { truncated?: true } {
@@ -63,8 +63,8 @@ export function handleRead(
     `This node's ${node.observations.length} observations total ${totalChars} characters, over the ` +
     `${READ_BUDGET}-character read budget, so each one longer than ${PREVIEW_LIMIT} characters is cut to a ` +
     `preview marked truncated. Call read(name, id) for one in full, or search(query) to find the right ones. ` +
-    `To bring the node back under budget, split it into nodes by topic and remove superseded observations ` +
-    `with remove_observation.`;
+    `learn() refuses new observations here until the node is back under budget: split it into nodes by topic ` +
+    `and remove superseded observations with remove_observation.`;
 
   return {
     name: node.name,

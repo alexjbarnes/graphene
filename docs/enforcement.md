@@ -67,6 +67,8 @@ Cleanup is lazy. On roughly one call in a hundred, the hook sweeps the sessions 
 
 On `SessionStart`, which fires at startup, on resume, and after compaction, the hook injects the standing rules block as context: the rules, the recording triggers, multi-repo session behavior, the full tool list, and a table of rationalizations with their rebuttals ("No node covers this file, so nothing to record" answered by "Absence of a node is a gap, create one or write a project fact"). The rules also state plainly that the graph is committed with the code and must be updated before `git commit`, not after, which is what the gate above enforces moment to moment. The text lives in `src/claude-md.ts` and the hook imports it from the compiled `dist/`, so the hook and the server never drift. Injecting after compaction is what keeps the rules in context once the original session start scrolls out.
 
+The same injection checks the project's auto-memory folder, which Claude Code keeps beside the session transcript under `~/.claude/projects/`. Graphene replaces auto-memory, so if the folder still holds files, the hook lists them and says to run [`/graphene:migrate-memory`](skills.md#graphenemigrate-memory). Nothing in that folder reaches the graph until then.
+
 Earlier versions wrote this block into the repo's `CLAUDE.md` between `<!-- graphene -->` markers. That dragged graphene-specific instructions into committed `CLAUDE.md` files for teammates who do not run graphene, so the write was dropped. The MCP server now does the reverse on startup: if it finds a committed block it strips it, preserving the rest of the file and removing `CLAUDE.md` entirely if the block was its only content. The strip is a one-time migration and a no-op once done.
 
 ## Soft by design

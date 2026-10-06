@@ -190,7 +190,7 @@ describe("search", () => {
 
   it("places the snippet over a match deep in a long observation", () => {
     handleUpsertNode(repo.repoRoot, { name: "pty", type: "subsystem" });
-    const content = "x".repeat(1000) + " retyped messages ticked consent boxes " + "y".repeat(1000);
+    const content = "x".repeat(600) + " retyped messages ticked consent boxes " + "y".repeat(600);
     handleLearn(repo.repoRoot, { node_name: "pty", content });
 
     const result = handleSearch(repo.repoRoot, global.dir, { query: "consent" });

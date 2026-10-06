@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { createTestRepo, type TestRepoDir } from "../helpers.js";
+import { createTestRepo, seedObservations, type TestRepoDir } from "../helpers.js";
 import { handleRead } from "../../src/tools/read.js";
 import { handleUpsertNode } from "../../src/tools/upsert-node.js";
 import { handleLink } from "../../src/tools/link.js";
@@ -137,26 +137,29 @@ describe("read", () => {
   describe("read budget", () => {
     it("returns every observation in full while the node is within budget", () => {
       handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem" });
-      handleLearn(repo.repoRoot, { node_name: "auth", content: "a".repeat(10_000) });
-      handleLearn(repo.repoRoot, { node_name: "auth", content: "b".repeat(10_000) });
+      for (let i = 0; i < 16; i++) {
+        handleLearn(repo.repoRoot, { node_name: "auth", content: `${i}`.padEnd(1_250, "x") });
+      }
 
       const result = handleRead(repo.repoRoot, { name: "auth" }) as Record<string, unknown>;
       const obs = result.observations as Array<Record<string, unknown>>;
       expect(result).not.toHaveProperty("observations_note");
-      expect(obs.map((o) => (o.content as string).length)).toEqual([10_000, 10_000]);
-      expect(obs[0]).not.toHaveProperty("truncated");
+      expect(obs).toHaveLength(16);
+      expect(obs.every((o) => (o.content as string).length === 1_250 && !("truncated" in o))).toBe(true);
     });
 
     it("cuts long observations to previews once the node is over budget, leaving short ones whole", () => {
       handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem" });
-      const long = handleLearn(repo.repoRoot, { node_name: "auth", content: "a".repeat(15_000) });
-      handleLearn(repo.repoRoot, { node_name: "auth", content: "b".repeat(6_000), source: "debugging" });
-      handleLearn(repo.repoRoot, { node_name: "auth", content: "short and whole" });
+      const [longId] = seedObservations(repo.repoRoot, "auth", [
+        { content: "a".repeat(15_000) },
+        { content: "b".repeat(6_000), source: "debugging" },
+        { content: "short and whole" },
+      ]);
 
       const result = handleRead(repo.repoRoot, { name: "auth" }) as Record<string, unknown>;
       const obs = result.observations as Array<Record<string, unknown>>;
       expect(obs).toHaveLength(3);
-      expect(obs[0]).toEqual({ id: long.id, content: "a".repeat(200) + "...", source: null, truncated: true });
+      expect(obs[0]).toEqual({ id: longId, content: "a".repeat(200) + "...", source: null, truncated: true });
       expect(obs[1].source).toBe("debugging");
       expect(obs[1].truncated).toBe(true);
       expect(obs[2]).not.toHaveProperty("truncated");
@@ -170,7 +173,7 @@ describe("read", () => {
 
     it("lists the note ahead of the observations it explains", () => {
       handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem" });
-      handleLearn(repo.repoRoot, { node_name: "auth", content: "a".repeat(20_001) });
+      seedObservations(repo.repoRoot, "auth", [{ content: "a".repeat(20_001) }]);
 
       const keys = Object.keys(handleRead(repo.repoRoot, { name: "auth" }));
       expect(keys.indexOf("observations_note")).toBe(keys.indexOf("observations") - 1);
@@ -181,8 +184,10 @@ describe("read", () => {
     it("returns one observation in full, even from a node over the read budget", () => {
       handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem" });
       const content = "c".repeat(25_000);
-      const { id } = handleLearn(repo.repoRoot, { node_name: "auth", content, source: "incident" });
-      handleLearn(repo.repoRoot, { node_name: "auth", content: "unrelated" });
+      const [id] = seedObservations(repo.repoRoot, "auth", [
+        { content, source: "incident" },
+        { content: "unrelated" },
+      ]);
 
       const result = handleRead(repo.repoRoot, { name: "auth", id });
       expect(result).toEqual({ name: "auth", observation: { id, content, source: "incident" } });

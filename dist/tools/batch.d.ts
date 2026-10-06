@@ -5,4 +5,8 @@ interface BatchResult {
     observations_added: number;
 }
 export declare function handleBatch(repoRoot: string, args: Record<string, unknown>): BatchResult;
+export declare function planBatch(repoRoot: string, args: Record<string, unknown>): {
+    result: BatchResult;
+    commit: () => void;
+};
 export {};

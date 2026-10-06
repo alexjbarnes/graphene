@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { readNode } from "../../src/store.js";
+import { readFileSync } from "node:fs";
+import { readNode, nodePath } from "../../src/store.js";
 import { createTestRepo, type TestRepoDir } from "../helpers.js";
 import { handleBatch } from "../../src/tools/batch.js";
 import { handleRead } from "../../src/tools/read.js";
 import { handleUpsertNode } from "../../src/tools/upsert-node.js";
+import { handleLearn } from "../../src/tools/learn.js";
 
 describe("batch", () => {
   let repo: TestRepoDir;
@@ -130,5 +132,54 @@ describe("batch", () => {
     });
 
     expect(readNode(repo.repoRoot, "auth")!.last_commit).toBe("new");
+  });
+
+  describe("observation size limits", () => {
+    it("refuses an over-limit observation and writes nothing, not even the batch's nodes", () => {
+      expect(() =>
+        handleBatch(repo.repoRoot, {
+          nodes: [{ name: "auth", type: "subsystem" }],
+          observations: [{ node_name: "auth", content: "a".repeat(1_501) }],
+        })
+      ).toThrow('Observation for node "auth" is 1501 characters, over the 1500-character limit');
+
+      expect((handleRead(repo.repoRoot, {}) as { nodes: unknown[] }).nodes).toHaveLength(0);
+    });
+
+    it("counts a node's additions across the batch together, and writes nothing on refusal", () => {
+      handleUpsertNode(repo.repoRoot, { name: "auth", type: "subsystem" });
+      for (let i = 0; i < 13; i++) {
+        handleLearn(repo.repoRoot, { node_name: "auth", content: `${i}`.padEnd(1_500, "x") });
+      }
+      const before = readFileSync(nodePath(repo.repoRoot, "auth"), "utf-8");
+
+      expect(() =>
+        handleBatch(repo.repoRoot, {
+          nodes: [{ name: "db", type: "module" }],
+          observations: [
+            { node_name: "auth", content: "a".repeat(300) },
+            { node_name: "auth", content: "b".repeat(300) },
+          ],
+        })
+      ).toThrow(
+        'Node "auth" holds 19500 characters of observations; adding 600 more would take it past the ' +
+          "20000-character read budget"
+      );
+
+      expect(readFileSync(nodePath(repo.repoRoot, "auth"), "utf-8")).toBe(before);
+      expect(readNode(repo.repoRoot, "db")).toBeNull();
+    });
+
+    it("applies the budget to a node created in the same batch", () => {
+      const observations = Array.from({ length: 14 }, (_, i) => ({
+        node_name: "auth",
+        content: `${i}`.padEnd(1_500, "x"),
+      }));
+
+      expect(() =>
+        handleBatch(repo.repoRoot, { nodes: [{ name: "auth", type: "subsystem" }], observations })
+      ).toThrow('Node "auth" holds 0 characters of observations; adding 21000 more');
+      expect(readNode(repo.repoRoot, "auth")).toBeNull();
+    });
   });
 });

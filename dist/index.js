@@ -25,20 +25,24 @@ else {
 // One-time v0.11 migration off a legacy sql.js database at `dbPath`. Guarded
 // on existsSync so node:sqlite (Node >= 22.5, see migrate.ts) is only ever
 // touched when a legacy db is actually present, and a missing/unavailable
-// node:sqlite is reported once rather than attempted. A migration failure is
-// logged and skipped rather than crashing the server or CLI: the legacy db
-// stays put and is retried on the next start.
+// node:sqlite is reported rather than a raw load error. A leftover db (see
+// MigrateRepoResult) is reported and left alone, before node:sqlite loads. A
+// migration failure is logged and skipped rather than crashing the server or
+// CLI: the legacy db stays put and is retried on the next start.
 function tryMigrate(dbPath, run) {
     if (!existsSync(dbPath))
         return;
-    if (!isSqliteAvailable()) {
-        console.error(`graphene: ${dbPath} needs migration but node:sqlite is unavailable; run once with Node >= 22.5`);
-        return;
-    }
     try {
-        run();
+        if (run().leftover) {
+            console.error(`graphene: left ${dbPath} alone: this store is already on markdown files, so importing the ` +
+                `database would overwrite them. Delete it once you have checked nothing in it is needed.`);
+        }
     }
     catch (err) {
+        if (!isSqliteAvailable()) {
+            console.error(`graphene: ${dbPath} needs migration but node:sqlite is unavailable; run once with Node >= 22.5`);
+            return;
+        }
         const message = err instanceof Error ? err.message : String(err);
         console.error(`graphene: migration of ${dbPath} failed: ${message}`);
     }

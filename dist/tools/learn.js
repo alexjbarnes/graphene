@@ -1,4 +1,5 @@
 import { readNode, appendLineVerified, observationId, nodePath } from "../store.js";
+import { checkObservationBudget } from "../budget.js";
 // Mirrors store.ts's private serializeObservation/serializeBody format
 // (neither is exported, and store.ts is not to be modified in this phase):
 // one bullet, continuation lines indented two spaces, id/source marker
@@ -20,6 +21,7 @@ export function handleLearn(repoRoot, args) {
     const node = readNode(repoRoot, nodeName);
     if (!node)
         throw new Error(`Node not found: ${nodeName}`);
+    checkObservationBudget(nodeName, node.observations, [content]);
     const existingIds = new Set(node.observations.map((o) => o.id));
     const id = observationId(content, existingIds);
     let line = serializeObservationLine(content, id, source);

@@ -9,7 +9,16 @@ import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { migrateRepo, migrateGlobal } from "../src/migrate.js";
-import { readNode, readFact, listFacts, grapheneDir, factsDir, observationId } from "../src/store.js";
+import {
+  readNode,
+  readFact,
+  writeNode,
+  writeFact,
+  listFacts,
+  grapheneDir,
+  factsDir,
+  observationId,
+} from "../src/store.js";
 
 // --- legacy fixture helpers ---
 
@@ -205,6 +214,40 @@ describe("migrateRepo", () => {
     expect(existsSync(join(grapheneDir(repoRoot), "context.db.migrated"))).toBe(true);
   });
 
+  it("leaves a legacy db alone when the repo already has node files, importing nothing", () => {
+    writeNode(repoRoot, {
+      name: "solo",
+      type: "subsystem",
+      summary: "current",
+      entry_points: [],
+      covers: [],
+      last_commit: null,
+      metadata: {},
+      edges: [],
+      observations: [],
+    });
+    const db = createLegacyRepoDb(repoRoot);
+    insertNode(db, { name: "solo", summary: "stale" });
+    insertNode(db, { name: "deleted-since" });
+    db.close();
+
+    expect(migrateRepo(repoRoot)).toEqual({ migrated: false, nodes: 0, facts: 0, renamed: [], leftover: true });
+    expect(readNode(repoRoot, "solo")!.summary).toBe("current");
+    expect(readNode(repoRoot, "deleted-since")).toBeNull();
+    expect(existsSync(join(grapheneDir(repoRoot), "context.db"))).toBe(true);
+    expect(existsSync(join(grapheneDir(repoRoot), "context.db.migrated"))).toBe(false);
+  });
+
+  it("treats project fact files alone as an existing file graph too", () => {
+    writeFact(factsDir(repoRoot), { category: "convention", subject: "testing", content: "current" });
+    const db = createLegacyRepoDb(repoRoot);
+    insertProjectFact(db, "convention", "testing", "stale");
+    db.close();
+
+    expect(migrateRepo(repoRoot).leftover).toBe(true);
+    expect(readFact(factsDir(repoRoot), "convention", "testing")!.content).toBe("current");
+  });
+
   it("orders observations by created_at ascending, overriding insertion/id order", () => {
     const db = createLegacyRepoDb(repoRoot);
     insertNode(db, { name: "solo" });
@@ -346,6 +389,19 @@ describe("migrateGlobal", () => {
 
   it("returns migrated:false when ~/.graphene/global.db does not exist", () => {
     expect(migrateGlobal(globalDirPath)).toEqual({ migrated: false, facts: 0, renamed: [] });
+  });
+
+  it("leaves global.db alone when the global store already holds facts, importing nothing", () => {
+    writeFact(globalDirPath, { category: "preference", subject: "editor", content: "current" });
+    const db = createLegacyGlobalDb(fakeHome);
+    insertGlobalFact(db, "preference", "editor", "stale");
+    insertGlobalFact(db, "preference", "shell", "zsh");
+    db.close();
+
+    expect(migrateGlobal(globalDirPath)).toEqual({ migrated: false, facts: 0, renamed: [], leftover: true });
+    expect(readFact(globalDirPath, "preference", "editor")!.content).toBe("current");
+    expect(readFact(globalDirPath, "preference", "shell")).toBeNull();
+    expect(existsSync(join(fakeHome, ".graphene", "global.db"))).toBe(true);
   });
 
   it("migrates global facts from ~/.graphene/global.db into globalDirPath and renames the legacy db", () => {

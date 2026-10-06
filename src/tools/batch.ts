@@ -1,4 +1,5 @@
-import { readNode, writeNode, observationId, type StoredNode } from "../store.js";
+import { readNode, writeNode, observationId, type StoredNode, type StoredObservation } from "../store.js";
+import { checkObservationBudget } from "../budget.js";
 import { normalizeArgs, applyUpsert, type UpsertNodeParams } from "./upsert-node.js";
 import { upsertEdge } from "./link.js";
 import { BIDIRECTIONAL_EDGE_TYPES } from "../types.js";
@@ -19,6 +20,18 @@ interface BatchResult {
 const VALID_KEYS = new Set(["nodes", "edges", "observations"]);
 
 export function handleBatch(repoRoot: string, args: Record<string, unknown>): BatchResult {
+  const plan = planBatch(repoRoot, args);
+  plan.commit();
+  return plan.result;
+}
+
+// Reads and validates the whole batch without writing anything, and returns
+// the writes as `commit`. Split out of handleBatch so a multi-repo batch can
+// plan every repo's share before committing any of them.
+export function planBatch(
+  repoRoot: string,
+  args: Record<string, unknown>
+): { result: BatchResult; commit: () => void } {
   const unknown = Object.keys(args).filter((k) => !VALID_KEYS.has(k));
   if (unknown.length > 0) {
     throw new Error(
@@ -93,6 +106,10 @@ export function handleBatch(repoRoot: string, args: Record<string, unknown>): Ba
     }
   }
 
+  // Each node's additions are checked together once the whole batch is
+  // known, against the observations it held before the batch.
+  const additions = new Map<string, { existing: StoredObservation[]; contents: string[] }>();
+
   if (params.observations) {
     for (const obs of params.observations) {
       const nodeName = obs.node_name as string;
@@ -104,6 +121,10 @@ export function handleBatch(repoRoot: string, args: Record<string, unknown>): Ba
       const node = load(nodeName);
       if (!node) throw new Error(`Node not found: ${nodeName}`);
 
+      const pending = additions.get(nodeName) ?? { existing: node.observations, contents: [] };
+      pending.contents.push(content);
+      additions.set(nodeName, pending);
+
       const existingIds = new Set(node.observations.map((o) => o.id));
       const id = observationId(content, existingIds);
       working.set(nodeName, {
@@ -114,15 +135,22 @@ export function handleBatch(repoRoot: string, args: Record<string, unknown>): Ba
     }
   }
 
-  // Phase B: writes. Every validation above already succeeded, so this can
-  // only fail on a genuine filesystem error. A crash between two of these
-  // writeNode calls can still leave the batch partially applied on disk --
-  // there is no cross-file atomic rename tying them together -- but no
-  // single file is ever left partially written, since writeNode goes through
-  // writeFileAtomic.
-  for (const node of working.values()) {
-    writeNode(repoRoot, node);
+  for (const [nodeName, { existing, contents }] of additions) {
+    checkObservationBudget(nodeName, existing, contents);
   }
 
-  return result;
+  return {
+    result,
+    // Phase B: writes. Every validation above already succeeded, so this can
+    // only fail on a genuine filesystem error. A crash between two of these
+    // writeNode calls can still leave the batch partially applied on disk --
+    // there is no cross-file atomic rename tying them together -- but no
+    // single file is ever left partially written, since writeNode goes
+    // through writeFileAtomic.
+    commit: () => {
+      for (const node of working.values()) {
+        writeNode(repoRoot, node);
+      }
+    },
+  };
 }

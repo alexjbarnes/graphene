@@ -16,7 +16,7 @@ With no argument, returns the node index: every node's name, type, and summary. 
 
 With a `name`, returns the full node: `entry_points`, `covers`, `last_commit`, `metadata`, all observations (with their ids), outgoing edges, and incoming dependents. Each edge and dependent carries the neighbor's summary, so one `read` shows you the node and its immediate context.
 
-The observations are bounded by a read budget of 20,000 characters. Once a node's observations total more than that, each one longer than 200 characters comes back cut to a preview and marked `truncated: true`, and an `observations_note` explains why and says to split the node by topic and remove superseded observations. A node that size is too big to take in as one tool result, and splitting it is the real fix.
+The observations are bounded by a read budget of 20,000 characters. `learn` and `batch` refuse writes past it, so a node only holds more if it grew before that limit existed or was edited by hand. Then each observation longer than 200 characters comes back cut to a preview and marked `truncated: true`, and an `observations_note` explains why and says to split the node by topic and remove superseded observations. A node that size is too big to take in as one tool result, and splitting it is the real fix.
 
 With a `name` and an `id`, returns that one observation in full, whatever the node's size: `{ name, observation: { id, content, source } }`. The id comes from a `read(name)` or `search(query)` result.
 
@@ -42,7 +42,7 @@ The same, for user-level facts that span repos. Never takes a `repo`: global fac
 
 ### `learn(node_name, content, source?)`
 
-Appends an observation to a node. Append-only: it never overwrites an existing observation. The optional `source` records what triggered the learning. This is the workhorse for code knowledge, gotchas, and constraints. Keep each observation to one point in a few sentences, and leave out what the code and its comments already say. `node_name` accepts `repo:name` in a multi-repo session.
+Appends an observation to a node. Append-only: it never overwrites an existing observation. The optional `source` records what triggered the learning. This is the workhorse for code knowledge, gotchas, and constraints. Keep each observation to one point in a few sentences, and leave out what the code and its comments already say. Two limits hold it to that. An observation over 1,500 characters is refused, and so is one that would take its node past the 20,000-character read budget (see `read`). That refusal lists the node's five largest observations with their ids and sizes: remove superseded ones with `remove_observation`, or split the node by topic, then record the observation. `node_name` accepts `repo:name` in a multi-repo session.
 
 ### `upsert_node(name, ...)`
 
@@ -54,7 +54,7 @@ Creates an edge. Types: `depends_on`, `extends`, `related_to`, `mirrors`. The la
 
 ### `batch({nodes, edges, observations})`
 
-Creates or updates many nodes, edges, and observations in a single transaction. Pass three arrays. Each node uses the same fields as `upsert_node`. This is how `init` populates an empty graph in one shot. If any part fails, the whole transaction rolls back. In a multi-repo session, every node, edge, and observation in the batch is resolved to a repo before anything is written, and a node created earlier in the same batch is a valid target for a later edge or observation that references it by bare name.
+Creates or updates many nodes, edges, and observations in a single transaction. Pass three arrays. Each node uses the same fields as `upsert_node`. This is how `init` populates an empty graph in one shot. If any part fails, the whole transaction rolls back. Observations follow `learn`'s limits, with each node's additions in the batch counted together. In a multi-repo session, every node, edge, and observation in the batch is resolved to a repo, and every repo's share validated, before anything is written, and a node created earlier in the same batch is a valid target for a later edge or observation that references it by bare name.
 
 ### `project_write(category, subject, content, repo?)`
 

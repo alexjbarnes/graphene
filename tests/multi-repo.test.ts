@@ -84,6 +84,21 @@ describe("multi-repo dispatch", () => {
     expect(() => dispatch(ctx, "read", { id })).toThrow("name is required with id");
   });
 
+  it("validates every repo's share of a batch before writing any, so a refusal in one writes nothing in the other", () => {
+    dispatch(ctx, "upsert_node", { name: "worker:queue", type: "subsystem" });
+    for (let i = 0; i < 13; i++) {
+      dispatch(ctx, "learn", { node_name: "worker:queue", content: `${i}`.padEnd(1_500, "x") });
+    }
+
+    expect(() =>
+      dispatch(ctx, "batch", {
+        nodes: [{ name: "portal:auth", type: "subsystem" }],
+        observations: [{ node_name: "worker:queue", content: "q".repeat(600) }],
+      })
+    ).toThrow('Node "queue" holds 19500 characters of observations');
+    expect(readNode(portal.path, "auth")).toBeNull();
+  });
+
   it("routes a create by cwd-relative covers and rewrites them repo-relative in the stored file", () => {
     process.chdir(parent);
     dispatch(ctx, "upsert_node", {

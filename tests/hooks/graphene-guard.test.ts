@@ -590,6 +590,51 @@ describe("graphene-guard hook", () => {
       expect(output.hookSpecificOutput.additionalContext).toContain("Graphene Context Graph");
     });
 
+    it("flags auto-memory files beside the transcript, naming the folder and the skill", () => {
+      const projectDir = mkdtempSync(join(tmpdir(), "graphene-hook-project-"));
+      try {
+        mkdirSync(join(projectDir, "memory"));
+        writeFileSync(join(projectDir, "memory", "MEMORY.md"), "- [Note](note.md)\n");
+        writeFileSync(join(projectDir, "memory", "note.md"), "a remembered fact\n");
+
+        const { stdout } = run({
+          session_id: "s1",
+          hook_event_name: "SessionStart",
+          source: "startup",
+          transcript_path: join(projectDir, "s1.jsonl"),
+        });
+        const ctx = parseOutput(stdout).hookSpecificOutput.additionalContext;
+        expect(ctx).toContain("Graphene Context Graph");
+        expect(ctx).toContain(
+          `This project's auto-memory folder, ${join(projectDir, "memory")}, still holds 2 files: MEMORY.md, note.md. ` +
+            "Graphene replaces auto-memory: run /graphene:migrate-memory to move them into the graph."
+        );
+      } finally {
+        rmSync(projectDir, { recursive: true, force: true });
+      }
+    });
+
+    it("adds no memory notice when the memory folder is missing or holds no files", () => {
+      const projectDir = mkdtempSync(join(tmpdir(), "graphene-hook-project-"));
+      try {
+        const input = {
+          session_id: "s1",
+          hook_event_name: "SessionStart",
+          source: "startup",
+          transcript_path: join(projectDir, "s1.jsonl"),
+        };
+        const missing = parseOutput(run(input).stdout).hookSpecificOutput.additionalContext;
+        expect(missing).toContain("Graphene Context Graph");
+        expect(missing).not.toContain("auto-memory folder");
+
+        mkdirSync(join(projectDir, "memory"));
+        const empty = parseOutput(run(input).stdout).hookSpecificOutput.additionalContext;
+        expect(empty).not.toContain("auto-memory folder");
+      } finally {
+        rmSync(projectDir, { recursive: true, force: true });
+      }
+    });
+
     it("injects even when not in a git repo", () => {
       const noGit = mkdtempSync(join(tmpdir(), "graphene-no-git-ss-"));
       try {

@@ -27,7 +27,7 @@ Install as a Claude Code plugin:
 /plugin install graphene@graphene
 ```
 
-This wires up the MCP server, the enforcement hooks, the `init` and `refresh` skills, and the SessionStart rules injection in one step. The plugin ships a prebuilt `dist/`, so there is no build step on your machine.
+This wires up the MCP server, the enforcement hooks, the `init`, `refresh`, and `migrate-memory` skills, and the SessionStart rules injection in one step. The plugin ships a prebuilt `dist/`, so there is no build step on your machine.
 
 Then, in any repo:
 
@@ -59,7 +59,7 @@ The **enforcement layer** is a set of Claude Code hooks. On the first tool call 
 - [Tools](docs/tools.md): the full reference for all 19 MCP tools
 - [Enforcement](docs/enforcement.md): the hook layer, status injection, the commit gate, session state, and the SessionStart rules injection
 - [Staleness](docs/staleness.md): how `covers` and `last_commit` let the graph detect its own drift
-- [Skills](docs/skills.md): the `init` and `refresh` slash commands
+- [Skills](docs/skills.md): the `init`, `refresh`, and `migrate-memory` slash commands
 - [Installation](docs/installation.md): plugin install, standalone MCP setup, data locations, and configuration
 
 ## Development

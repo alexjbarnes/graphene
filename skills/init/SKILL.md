@@ -48,23 +48,11 @@ description: Populate the graphene context graph for a new repo. Use when the gr
 }
 ```
 
-6. After creating nodes, add observations for anything non-obvious you noticed during exploration. Use `learn(node_name, content)` for each.
+6. After creating nodes, add observations for anything non-obvious you noticed during exploration. Use `learn(node_name, content)` for each. Keep each to one point in a few sentences, at most 1,500 characters. A node holds at most 20,000 characters of observations.
 
-7. Stage and commit `.graphene/`. The graph lives in this repo, under `.graphene/`, and is committed with the code, not gitignored. Once the graph is populated, `git add .graphene` and commit it, so the next clone gets the graph too.
+7. Run `/graphene:migrate-memory` to move this project's existing auto-memory into the graph.
 
-## Migrate ALL memory to graphene
-
-Graphene replaces auto-memory entirely. There is no valid reason to keep anything in memory files when graphene is installed. Check for memory files in `~/.claude/projects/*/memory/` and any CLAUDE.md entries that contain learned facts.
-
-You MUST migrate every memory file. No exceptions. Do not categorize some memories as "workflow preferences" and leave them in memory. The project_write and global_write tools exist precisely for non-code knowledge.
-
-Migration targets:
-- **Workflow preferences** ("don't start dev server", "no parallel agents", "skip superpowers") -> `project_write("preference", subject, content)` if repo-specific, `global_write("preference", subject, content)` if cross-repo. If unsure, ask the user.
-- **Code knowledge** ("auth middleware is in src/middleware, not src/auth") -> `learn(node_name, content)` on the relevant node.
-- **Project decisions and conventions** ("NODE_ENV must not be set for builds") -> `project_write("convention", subject, content)`.
-- **User feedback and corrections** ("don't use mocks in tests", "prefer single PRs for refactors") -> `global_write("feedback", subject, content)` or `project_write("feedback", subject, content)`.
-
-After migrating every file, delete the memory files and clean up MEMORY.md. Two persistence systems means a future session has to check both places, which defeats the purpose.
+8. Stage and commit `.graphene/`. The graph lives in this repo, under `.graphene/`, and is committed with the code, not gitignored. Once the graph is populated, `git add .graphene` and commit it, so the next clone gets the graph too.
 
 ## Guidelines
 

@@ -73,6 +73,8 @@ On startup, for every repo in scope and for the global store, graphene checks fo
 - The database is renamed to the same path with `.migrated` appended (`context.db` -> `context.db.migrated`, `global.db` -> `global.db.migrated`), never deleted.
 - For a repo migration, if that repo's `.gitignore` has an exact `.graphene/` or `.graphene` line, it is rewritten to `.graphene/*.migrated`, so the new markdown graph is no longer excluded but the retired database stays out.
 
+A legacy database next to a store that already holds markdown files is a leftover, not a graph to migrate: one an older graphene process wrote back after the migration ran, or a local database in a clone of a repo whose graph is already committed. Importing it would overwrite newer files and bring back deleted ones, so graphene leaves it where it is, imports nothing, and logs that it did. Delete it once you have checked nothing in it is needed.
+
 Migrating needs Node.js >= 22.5, because it reads the legacy database through the experimental `node:sqlite` module. Everyday use of graphene does not need it: the check only matters when a legacy `.db` file is actually present. If one is present and the Node version is too old, graphene logs which file needs migration and skips it, retrying on the next start once you are on a new enough Node.
 
 `graphene globals export` and `graphene globals import` (see [Tools](tools.md)) run the global migration first too, so the CLI always reads and writes the current markdown format even in a session that never triggered it on its own.

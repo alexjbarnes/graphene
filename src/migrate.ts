@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, renameSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, renameSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +10,7 @@ import {
   type StoredFact,
   writeNode,
   writeFact,
+  nodesDir,
   factsDir,
   grapheneDir,
   observationId,
@@ -305,19 +306,32 @@ function rewriteGitignore(repoRoot: string): void {
   if (changed) writeFileAtomic(path, rewritten.join("\n"));
 }
 
+function hasMarkdownFiles(dir: string): boolean {
+  return existsSync(dir) && readdirSync(dir).some((f) => f.endsWith(".md"));
+}
+
 // --- public API ---
 
+// `leftover` marks a legacy db that was left alone because its store is
+// already on markdown files. Importing it would overwrite newer node and fact
+// files with stale content and bring back deleted ones: the db is one an
+// older graphene process wrote back after the migration, or a local db in a
+// clone of a repo whose graph is already committed.
 export interface MigrateRepoResult {
   migrated: boolean;
   nodes: number;
   facts: number;
   renamed: string[];
+  leftover?: true;
 }
 
 export function migrateRepo(repoRoot: string): MigrateRepoResult {
   const dbPath = legacyRepoDbPath(repoRoot);
   if (!existsSync(dbPath)) {
     return { migrated: false, nodes: 0, facts: 0, renamed: [] };
+  }
+  if (hasMarkdownFiles(nodesDir(repoRoot)) || hasMarkdownFiles(factsDir(repoRoot))) {
+    return { migrated: false, nodes: 0, facts: 0, renamed: [], leftover: true };
   }
 
   const { DatabaseSync } = loadSqlite();
@@ -355,12 +369,16 @@ export interface MigrateGlobalResult {
   migrated: boolean;
   facts: number;
   renamed: string[];
+  leftover?: true;
 }
 
 export function migrateGlobal(globalDirPath: string): MigrateGlobalResult {
   const dbPath = legacyGlobalDbPath();
   if (!existsSync(dbPath)) {
     return { migrated: false, facts: 0, renamed: [] };
+  }
+  if (hasMarkdownFiles(globalDirPath)) {
+    return { migrated: false, facts: 0, renamed: [], leftover: true };
   }
 
   const { DatabaseSync } = loadSqlite();
