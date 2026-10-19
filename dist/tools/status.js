@@ -4,7 +4,8 @@ const KEYS_CAP = 50;
 // Caps a list of "category/subject" keys so status can never grow unbounded:
 // full fact bodies are never included, only counts and a capped key list.
 // Exported so multi-repo status (server.ts) can compute global_facts once,
-// against the real globalDir, with the exact same capping.
+// against the real globalDir, with the exact same capping, and cap its list
+// of repos without a graph the same way.
 export function boundedKeys(keys) {
     if (keys.length <= KEYS_CAP)
         return keys;

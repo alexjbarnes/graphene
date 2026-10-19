@@ -4,7 +4,7 @@
 // child git repos so scopes.length > 1 and the multi-repo dispatch path
 // (dispatchMulti in server.ts) is what actually runs.
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { dispatch, type ServerContext } from "../src/server.js";
@@ -261,6 +261,21 @@ describe("multi-repo dispatch", () => {
     expect(status.repos[0]).not.toHaveProperty("global_facts");
   });
 
+  it("read with repo lists only that repo's index, and looks a bare name up only there", () => {
+    dispatch(ctx, "upsert_node", { name: "portal:auth", type: "subsystem" });
+    dispatch(ctx, "upsert_node", { name: "worker:queue", type: "subsystem" });
+
+    const index = dispatch(ctx, "read", { repo: "worker" }) as { nodes: Array<Record<string, unknown>> };
+    expect(index.nodes).toEqual([{ repo: "worker", name: "queue", type: "subsystem", summary: null }]);
+
+    const node = dispatch(ctx, "read", { name: "queue", repo: "worker" }) as { repo: string; name: string };
+    expect(node.repo).toBe("worker");
+    expect(node.name).toBe("queue");
+
+    expect(() => dispatch(ctx, "read", { name: "auth", repo: "worker" })).toThrow(/Node not found: auth/);
+    expect(() => dispatch(ctx, "read", { repo: "nope" })).toThrow(/Unknown repo "nope" for read/);
+  });
+
   it("multi-repo stale returns a repos array", () => {
     dispatch(ctx, "upsert_node", { name: "portal:auth", type: "subsystem", covers: ["src/"] });
 
@@ -314,6 +329,120 @@ describe("single-repo status shape is unchanged (regression guard)", () => {
 
     const read = dispatch(ctx, "read", {}) as { nodes: Array<Record<string, unknown>> };
     expect(read.nodes[0]).not.toHaveProperty("repo");
+  });
+
+  it("accepts read's repo only when it names the session's repo", () => {
+    dispatch(ctx, "upsert_node", { name: "auth", type: "subsystem" });
+
+    const read = dispatch(ctx, "read", { repo: ctx.scopes[0].name }) as { nodes: Array<Record<string, unknown>> };
+    expect(read.nodes).toEqual([{ name: "auth", type: "subsystem", summary: null }]);
+    expect(() => dispatch(ctx, "read", { repo: "other" })).toThrow(/Unknown repo "other" for read/);
+  });
+});
+
+describe("a parent of more than 20 repos stays usable with bounded status", () => {
+  let parent: string;
+  let globalStore: TestGlobalDir;
+
+  beforeEach(() => {
+    parent = mkdtempSync(join(tmpdir(), "graphene-wide-"));
+    globalStore = createTestGlobalDir();
+  });
+
+  afterEach(() => {
+    globalStore.cleanup();
+    rmSync(parent, { recursive: true, force: true });
+  });
+
+  function ctx(): ServerContext {
+    return { scopes: discoverScopes(parent), globalDir: globalStore.dir };
+  }
+
+  // Discovery only looks for a .git entry, and status never touches git in a
+  // repo without a graph, so a bare directory stands in for each of those.
+  function addReposWithoutGraph(count: number): void {
+    for (let i = 0; i < count; i++) {
+      mkdirSync(join(parent, `plain-${String(i).padStart(2, "0")}`, ".git"), { recursive: true });
+    }
+  }
+
+  it("gives only the repos with a graph a full entry and names the rest", () => {
+    addReposWithoutGraph(86);
+    createTestGitRepo(parent, "api");
+    dispatch(ctx(), "upsert_node", { name: "api:auth", type: "subsystem" });
+
+    const status = dispatch(ctx(), "status", {}) as {
+      repos: Array<{ repo: string; head?: string; nodes?: unknown[] }>;
+      without_graph: { count: number; repos: string[] };
+    };
+    expect(status.repos).toHaveLength(1);
+    expect(status.repos[0].repo).toBe("api");
+    expect(status.repos[0].head).toMatch(/^[0-9a-f]{40}$/);
+    expect(status.repos[0].nodes).toHaveLength(1);
+    expect(status.without_graph.count).toBe(86);
+    expect(status.without_graph.repos).toHaveLength(51);
+    expect(status.without_graph.repos[0]).toBe("plain-00");
+    expect(status.without_graph.repos[50]).toBe("+36 more");
+  });
+
+  it("counts a repo holding only project facts as having a graph", () => {
+    addReposWithoutGraph(20);
+    createTestGitRepo(parent, "api");
+    dispatch(ctx(), "project_write", { repo: "api", category: "convention", subject: "naming", content: "kebab" });
+
+    const status = dispatch(ctx(), "status", {}) as {
+      repos: Array<{ repo: string }>;
+      without_graph: { count: number };
+    };
+    expect(status.repos.map((r) => r.repo)).toEqual(["api"]);
+    expect(status.without_graph.count).toBe(20);
+  });
+
+  it("reports a repo with an unreadable store on its own entry instead of failing status", () => {
+    addReposWithoutGraph(21);
+    const broken = createTestGitRepo(parent, "broken");
+    broken.writeFile(".graphene/facts/bad.md", "not a fact file\n");
+    createTestGitRepo(parent, "api");
+    dispatch(ctx(), "upsert_node", { name: "api:auth", type: "subsystem" });
+
+    const status = dispatch(ctx(), "status", {}) as {
+      repos: Array<{ repo: string; nodes?: unknown[]; error?: string }>;
+      without_graph: { count: number };
+    };
+    expect(status.repos.map((r) => r.repo)).toEqual(["api", "broken"]);
+    expect(status.repos[0].nodes).toHaveLength(1);
+    expect(status.repos[1].error).toMatch(/frontmatter/);
+    expect(status.without_graph.count).toBe(21);
+  });
+
+  it("summarises each repo in one line once more than 20 have a graph", () => {
+    for (let i = 0; i < 21; i++) createTestGitRepo(parent, `svc-${String(i).padStart(2, "0")}`);
+    dispatch(ctx(), "upsert_node", { name: "svc-00:auth", type: "subsystem" });
+    for (let i = 1; i < 21; i++) {
+      dispatch(ctx(), "project_write", {
+        repo: `svc-${String(i).padStart(2, "0")}`, category: "convention", subject: "naming", content: "kebab",
+      });
+    }
+
+    const status = dispatch(ctx(), "status", {}) as {
+      repos: Array<Record<string, unknown>>;
+      without_graph: { count: number; repos: string[] };
+    };
+    expect(status.repos).toHaveLength(21);
+    expect(status.repos[0]).toEqual({ repo: "svc-00", node_count: 1, stale: ["auth"], project_fact_count: 0 });
+    expect(status.repos[1]).toEqual({ repo: "svc-01", node_count: 0, stale: [], project_fact_count: 1 });
+    expect(status.without_graph).toEqual({ count: 0, repos: [] });
+  }, 30000);
+
+  it("still reads, writes and narrows to one repo across every repo in scope", () => {
+    addReposWithoutGraph(30);
+    createTestGitRepo(parent, "api");
+    dispatch(ctx(), "upsert_node", { name: "api:auth", type: "subsystem" });
+    dispatch(ctx(), "upsert_node", { name: "plain-29:billing", type: "subsystem" });
+
+    expect(readNode(join(parent, "plain-29"), "billing")).not.toBeNull();
+    const index = dispatch(ctx(), "read", { repo: "api" }) as { nodes: Array<Record<string, unknown>> };
+    expect(index.nodes).toEqual([{ repo: "api", name: "auth", type: "subsystem", summary: null }]);
   });
 });
 

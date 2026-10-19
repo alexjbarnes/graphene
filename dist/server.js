@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { existsSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -21,7 +22,7 @@ import { handleProjectWrite } from "./tools/project-write.js";
 import { handleProjectDelete } from "./tools/project-delete.js";
 import { handleBatch, planBatch } from "./tools/batch.js";
 import { handleStatus, boundedKeys } from "./tools/status.js";
-import { listFacts } from "./store.js";
+import { factsDir, listFacts, listNodes } from "./store.js";
 import { exportGlobals, importGlobals } from "./globals-sync.js";
 import { parseNodeRef, resolveNodeRef, resolveUpsertRef, resolveWriteTarget, rewriteRepoRelative, } from "./scope.js";
 const TOOLS = [
@@ -29,7 +30,9 @@ const TOOLS = [
         name: "status",
         description: "Get a bounded snapshot: node index, stale nodes, current HEAD, and project/global fact counts and keys " +
             "(never fact or observation bodies). Automatically injected at session start by the hook, but can be " +
-            "called manually to refresh. For observation or fact content, call read(name), project_read(), or global_read().",
+            "called manually to refresh. For observation or fact content, call read(name), project_read(), or global_read(). " +
+            "In a session over more than 20 repos, repos without a graph are only named, and once more than 20 have a " +
+            "graph each is summarised in one line; read with repo lists one repo's nodes.",
         inputSchema: {
             type: "object",
             properties: {},
@@ -37,7 +40,7 @@ const TOOLS = [
     },
     {
         name: "read",
-        description: "Read the context graph. No arguments returns the full index (all node names, types, summaries). With a name argument, returns the full node including outgoing edges, incoming dependents with neighbor summaries, and observations. A node whose observations exceed the read budget returns each long one as a preview marked truncated. With name and id, returns that one observation in full. In multi-repo sessions, index and node results include a repo field, and name accepts repo:name to disambiguate.",
+        description: "Read the context graph. No arguments returns the full index (all node names, types, summaries). With a name argument, returns the full node including outgoing edges, incoming dependents with neighbor summaries, and observations. A node whose observations exceed the read budget returns each long one as a preview marked truncated. With name and id, returns that one observation in full. In multi-repo sessions, index and node results include a repo field, name accepts repo:name to disambiguate, and repo limits the call to one repo.",
         inputSchema: {
             type: "object",
             properties: {
@@ -48,6 +51,10 @@ const TOOLS = [
                 id: {
                     type: "string",
                     description: "Observation id, from a read or search result. With name, returns that one observation in full.",
+                },
+                repo: {
+                    type: "string",
+                    description: "Repo name. In a multi-repo session, limits the index (or a bare name) to that repo. Must match the session's repo if given in a single-repo session.",
                 },
             },
         },
@@ -451,6 +458,19 @@ function resolveProjectRoot(tool, scopes, args) {
     }
     return scope.root;
 }
+// read's optional `repo` narrows the call to that one repo, so a session
+// over many repos can list one repo's index; in a single-repo session it
+// must name the session's repo if given at all.
+function narrowToRepo(scopes, args) {
+    const repo = args.repo;
+    if (repo === undefined)
+        return scopes;
+    const scope = scopes.find((s) => s.name === repo);
+    if (!scope) {
+        throw new Error(`Unknown repo "${repo}" for read. In scope: ${scopeNames(scopes)}.`);
+    }
+    return [scope];
+}
 // link/unlink (and batch edges) require both endpoints to resolve to the
 // same repo: edges are not allowed to cross scopes, since scope names are
 // session-relative and must never be written into a committed node file.
@@ -504,6 +524,16 @@ export function dispatch(ctx, tool, args) {
             return handleProjectWrite(resolveProjectRoot("project_write", requireScopes(ctx), args), args);
         case "project_delete":
             return handleProjectDelete(resolveProjectRoot("project_delete", requireScopes(ctx), args), args);
+        // read is split here rather than in the tables below because `repo`
+        // narrows the scopes, while the result shape (repo fields or not) still
+        // follows the session's own repo count.
+        case "read": {
+            const scopes = requireScopes(ctx);
+            const target = narrowToRepo(scopes, args);
+            if (scopes.length === 1)
+                return handleRead(target[0].root, args);
+            return routeRead(target, args);
+        }
         default: {
             const scopes = requireScopes(ctx);
             if (scopes.length === 1)
@@ -518,8 +548,6 @@ function dispatchSingle(repoRoot, globalDir, tool, args) {
     switch (tool) {
         case "status":
             return handleStatus(repoRoot, globalDir, args);
-        case "read":
-            return handleRead(repoRoot, args);
         case "search":
             return handleSearch(repoRoot, globalDir, args);
         case "upsert_node":
@@ -546,8 +574,6 @@ function dispatchMulti(scopes, globalDir, tool, args) {
     switch (tool) {
         case "status":
             return routeStatus(scopes, globalDir);
-        case "read":
-            return routeRead(scopes, args);
         case "search":
             return routeSearch(scopes, globalDir, args);
         case "upsert_node":
@@ -570,27 +596,60 @@ function dispatchMulti(scopes, globalDir, tool, args) {
             throw new Error(`Unknown tool: ${tool}`);
     }
 }
+// Status gives a repo a full section (HEAD, node index, stale nodes, fact
+// keys) only while there are at most this many of them. A parent of more
+// repos, such as a whole ~/repos checkout, keeps every repo in scope, but
+// status only names the ones without a graph, and once more than this many
+// have a graph, each of those gets a one-line summary instead.
+const MAX_DETAILED_REPOS = 20;
+// A node or a project fact file makes a graph. Only file names are listed,
+// never parsed, and a store that cannot be listed counts as a graph, so
+// handleStatus reports the failure on that repo's own entry instead of it
+// escaping routeStatus and taking down the whole session's status.
+function hasGraph(scope) {
+    try {
+        if (listNodes(scope.root).length > 0)
+            return true;
+        const dir = factsDir(scope.root);
+        return existsSync(dir) && readdirSync(dir).some((f) => f.endsWith(".md"));
+    }
+    catch {
+        return true;
+    }
+}
 function routeStatus(scopes, globalDir) {
     const emptyDir = emptyStoreDir();
+    const wide = scopes.length > MAX_DETAILED_REPOS;
+    const shown = wide ? scopes.filter(hasGraph) : scopes;
+    const summarise = shown.length > MAX_DETAILED_REPOS;
     // One broken scope (e.g. a freshly `git init`ed sibling with no commits,
     // where getHead throws) must degrade to an error entry for that repo, not
     // take down status for the whole session.
-    const repos = scopes.map((scope) => {
+    const repos = shown.map((scope) => {
         try {
             const { global_facts, ...rest } = handleStatus(scope.root, emptyDir, {});
-            return { repo: scope.name, ...rest };
+            if (!summarise)
+                return { repo: scope.name, ...rest };
+            return {
+                repo: scope.name,
+                node_count: rest.nodes.length,
+                stale: rest.stale_nodes.map((s) => s.name),
+                project_fact_count: rest.project_facts.count,
+            };
         }
         catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             return { repo: scope.name, error: message };
         }
     });
+    const withoutGraph = wide ? scopes.filter((s) => !shown.includes(s)).map((s) => s.name) : [];
     // Computed once directly, with the same capping handleStatus itself uses,
     // rather than once per scope: otherwise global facts would be counted
     // once per repo instead of once per session.
     const globalFacts = listFacts(globalDir);
     return {
         repos,
+        ...(wide ? { without_graph: { count: withoutGraph.length, repos: boundedKeys(withoutGraph) } } : {}),
         global_facts: {
             count: globalFacts.length,
             keys: boundedKeys(globalFacts.map((f) => `${f.category}/${f.subject}`)),

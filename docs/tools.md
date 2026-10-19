@@ -10,7 +10,9 @@ Returns a bounded snapshot: current HEAD, the node index (name, type, summary, o
 
 In a multi-repo session the shape changes to `{ repos: [...], global_facts }`: one status entry per repo (or a `{ repo, error }` entry if that repo's own status call failed), with `global_facts` reported once for the whole session rather than once per repo.
 
-### `read(name?, id?)`
+A parent directory of more than 20 repos, such as a whole `~/repos` checkout, keeps every repo in scope but keeps status bounded. Only repos with a graph (a node or a project fact) get an entry, and the rest are named in `without_graph: { count, repos }`. Once more than 20 repos have a graph, each entry shrinks to `{ repo, node_count, stale, project_fact_count }`, with `stale` holding node names; `read` with a `repo` argument then lists one repo's nodes.
+
+### `read(name?, id?, repo?)`
 
 With no argument, returns the node index: every node's name, type, and summary. This is the map.
 
@@ -20,7 +22,7 @@ The observations are bounded by a read budget of 20,000 characters. `learn` and 
 
 With a `name` and an `id`, returns that one observation in full, whatever the node's size: `{ name, observation: { id, content, source } }`. The id comes from a `read(name)` or `search(query)` result.
 
-In a multi-repo session, index and node results include a `repo` field, and `name` accepts `repo:name` to disambiguate.
+In a multi-repo session, index and node results include a `repo` field, and `name` accepts `repo:name` to disambiguate. `repo` limits the call to that one repo: the index lists only its nodes, and a bare `name` is looked up only there. In a single-repo session `repo` must match the session's repo if given at all.
 
 ### `search(query)`
 
@@ -112,14 +114,14 @@ Removes one user-level fact.
 
 ## Multi-repo sessions
 
-If the working directory is itself a git repo, that repo is the only one in scope and every tool behaves exactly as described above. If it is not, but it holds one or more child repos up to two directories deep, all of them are in scope at once, aggregated into a single session.
+If the working directory is itself a git repo, that repo is the only one in scope and every tool behaves exactly as described above. If it is not, but it holds one or more child repos up to two directories deep, all of them are in scope at once, aggregated into a single session, however many there are.
 
 - Every node qualifies as `repo:name`. A bare `name` still resolves for `read`, `learn`, `link`, `unlink`, `remove_observation`, `delete_node`, and `upsert_node` if it is unique across the repos in scope; if two repos both have a node by that name, the tool errors and tells you to qualify it.
 - Creating a brand-new node under a bare, unqualified name routes it to whichever repo its `covers` or `entry_points` paths resolve inside. If that cannot be determined, the tool errors rather than guessing, and asks you to qualify the name or supply paths inside one repo.
 - Cross-repo edges are not supported. `link`, `unlink`, and edges inside `batch` require `from` and `to` to resolve to the same repo; a pair that resolves to two different repos is rejected, naming both.
 - `project_read`, `project_write`, and `project_delete` take a `repo` argument, required once more than one repo is in scope.
 - `global_read`, `global_write`, `global_delete`, `globals_export`, and `globals_import` are unaffected: global facts are never scoped to a repo.
-- `read()` with no name, and `status()`, aggregate across every repo in scope rather than picking one; see their entries above for the exact shape.
+- `read()` with no name, and `status()`, aggregate across every repo in scope rather than picking one; see their entries above for the exact shape. Past 20 repos, status names the repos without a graph instead of giving each an entry, and `read` takes a `repo` argument to list one repo's nodes.
 
 ## A typical session
 

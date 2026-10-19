@@ -24,11 +24,11 @@ The trigger is what you learned, not whether a node exists. There is always a ho
 - What you learned replaces an older observation: \`remove_observation()\` the old one in the same step. A node holds current state; git keeps the history.
 
 ### Multi-repo sessions
-A session rooted in a parent directory that holds more than one repo puts every one of them in scope at once. Nodes qualify as \`repo:name\`. A bare name still resolves if it is unique across the repos in scope, otherwise qualify it. Cross-repo edges are rejected: \`link\`, \`unlink\`, and edges passed to \`batch\` require both ends to resolve to the same repo. \`project_read\`, \`project_write\`, and \`project_delete\` take a \`repo\` argument, required once more than one repo is in scope.
+A session rooted in a parent directory that holds more than one repo puts every one of them in scope at once. Nodes qualify as \`repo:name\`. A bare name still resolves if it is unique across the repos in scope, otherwise qualify it. Cross-repo edges are rejected: \`link\`, \`unlink\`, and edges passed to \`batch\` require both ends to resolve to the same repo. \`project_read\`, \`project_write\`, and \`project_delete\` take a \`repo\` argument, required once more than one repo is in scope. Past 20 repos, status only names the ones without a graph, and once more than 20 have a graph it gives each one line: \`read\` with a \`repo\` argument lists that repo's nodes.
 
 ### Tools: reading
 - \`status()\` - auto-injected at session start. Call manually to refresh. Bounded: the node index, stale nodes, and project/global fact keys, never observation or fact bodies.
-- \`read()\` - no args returns full node index. \`read(name)\` returns node detail: entry_points, observations, edges, dependents. A node over the read budget returns long observations as previews; \`read(name, id)\` returns one in full.
+- \`read()\` - no args returns full node index, or one repo's with \`repo\` in a multi-repo session. \`read(name)\` returns node detail: entry_points, observations, edges, dependents. A node over the read budget returns long observations as previews; \`read(name, id)\` returns one in full.
 - \`search(query)\` - search across nodes, observations, project facts, global facts, and edge reasons. Multi-word queries match any word, ranked by relevance. Returns at most the top 20 results, each with a snippet around the match. Observation results carry an \`id\` for \`read(name, id)\`.
 - \`stale()\` - check which nodes have changed files since their last_commit.
 - \`project_read(category?, subject?, repo?)\` - read project facts. No args returns all.

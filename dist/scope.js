@@ -7,7 +7,6 @@ import { readNode } from "./store.js";
 const SKIP_DIRS = new Set(["node_modules", "vendor", "dist", "build", "target", ".cache", "tmp"]);
 // Repos may be found at cwd/child (1) or cwd/child/grandchild (2), never deeper.
 const MAX_DEPTH = 2;
-const MAX_SCOPES = 20;
 function isRepoDir(dir) {
     return existsSync(join(dir, ".git"));
 }
@@ -43,7 +42,10 @@ function scanForRepos(dir, depth, cwd, out) {
 // Determines the set of repo scopes visible to this session. If `cwd` is
 // itself inside a git repo, that single repo is the only scope (matches
 // today's single-repo behavior exactly). Otherwise, child repos are
-// discovered beneath `cwd` and every one of them is in scope.
+// discovered beneath `cwd` and every one of them is in scope, however many
+// there are. A broad parent such as a whole ~/repos checkout must still let
+// the server start: status bounds what it shows instead (routeStatus in
+// server.ts).
 export function discoverScopes(cwd) {
     let repoRoot;
     try {
@@ -58,10 +60,6 @@ export function discoverScopes(cwd) {
     const found = [];
     scanForRepos(cwd, 1, cwd, found);
     found.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
-    if (found.length > MAX_SCOPES) {
-        throw new Error(`Found ${found.length} repos under ${cwd}, more than the cap of ${MAX_SCOPES}. ` +
-            `This parent directory is too broad; run graphene from inside a specific repo instead.`);
-    }
     return found;
 }
 function scopeNames(scopes) {

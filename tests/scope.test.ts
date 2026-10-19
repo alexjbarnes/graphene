@@ -110,15 +110,19 @@ describe("discoverScopes", () => {
     expect(scopes).toEqual([{ name: "outer", root: join(parent, "outer") }]);
   });
 
-  it("throws when more than 20 repos are found, naming the cap", () => {
+  it("keeps every repo in scope however many there are, rather than refusing a broad parent", () => {
     parent = mkdtempSync(join(tmpdir(), "graphene-scope-test-"));
-    for (let i = 0; i < 21; i++) {
-      initGitDir(join(parent, `repo-${String(i).padStart(2, "0")}`));
+    // Discovery only looks for a .git entry, so a bare directory stands in
+    // for a repo here.
+    for (let i = 0; i < 90; i++) {
+      mkdirSync(join(parent, `repo-${String(i).padStart(2, "0")}`, ".git"), { recursive: true });
     }
 
-    expect(() => discoverScopes(parent)).toThrow(/21 repos/);
-    expect(() => discoverScopes(parent)).toThrow(/too broad/);
-  }, 30000);
+    const scopes = discoverScopes(parent);
+    expect(scopes).toHaveLength(90);
+    expect(scopes[0]).toEqual({ name: "repo-00", root: join(parent, "repo-00") });
+    expect(scopes[89].name).toBe("repo-89");
+  });
 });
 
 describe("parseNodeRef / resolveNodeRef", () => {

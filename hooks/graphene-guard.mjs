@@ -26,9 +26,9 @@ async function getStatus(repoRoot) {
 // Only used when getRepoRoot() is null, i.e. the session's cwd is not itself
 // inside a repo. Discovers child repos beneath cwd the same way the server
 // does (dist/scope.js), so a parent-directory session gets a status section
-// per repo instead of being skipped outright. Any failure (including the
-// discoverScopes cap on too many repos) degrades to "no scopes", which the
-// caller treats the same as a plain non-repo directory: skip quietly.
+// per repo instead of being skipped outright. Any failure degrades to "no
+// scopes", which the caller treats the same as a plain non-repo directory:
+// skip quietly.
 async function discoverMultiRepoScopes() {
   try {
     const pluginRoot = process.env.CLAUDE_PLUGIN_ROOT || join(import.meta.dirname, "..");
@@ -209,20 +209,54 @@ function formatStatusBody(status) {
   return lines.join("\n");
 }
 
+// One line per repo, for a session with more repos that have a graph than
+// status gives a full section to (routeStatus in src/server.ts).
+function formatRepoSummary(repo) {
+  if ("error" in repo) return `  - ${repo.repo}: status unavailable: ${repo.error}`;
+  const counts = [`${repo.node_count} ${repo.node_count === 1 ? "node" : "nodes"}`];
+  if (repo.project_fact_count > 0) {
+    counts.push(`${repo.project_fact_count} project ${repo.project_fact_count === 1 ? "fact" : "facts"}`);
+  }
+  const stale = repo.stale.length > 0 ? `, STALE: ${repo.stale.join(", ")}` : "";
+  return `  - ${repo.repo} (${counts.join(", ")})${stale}`;
+}
+
 // Multi-repo shape from dispatch(ctx, "status", {}): { repos: [...], global_facts }.
 // One section per repo, `=== name ===` style, using the same body lines as
 // the single-repo case; a repo whose own status call failed (e.g. a freshly
 // `git init`ed sibling with no commits) renders as a one-line error instead of
 // dropping the whole injection. Globals are printed once at the end, since
-// they are session-wide rather than per-repo.
+// they are session-wide rather than per-repo. A parent of more than 20 repos
+// also carries `without_graph`: only repos with a graph get a section, and
+// past 20 of those each gets one line from formatRepoSummary instead.
 function formatMultiStatus(status) {
-  const sections = status.repos.map((repo) => {
-    const header = `=== ${repo.repo} ===`;
-    if ("error" in repo) {
-      return `${header}\nstatus unavailable: ${repo.error}`;
+  const sections = [];
+  const wide = status.without_graph !== undefined;
+  const summarised = status.repos.some((repo) => "node_count" in repo);
+
+  if (wide) {
+    const shown = status.repos.length;
+    const header = `${shown + status.without_graph.count} repos in scope, ${shown} with a graph`;
+    if (summarised) {
+      sections.push(`${header}, one line each. read with a repo argument lists that repo's nodes.\n` +
+        status.repos.map(formatRepoSummary).join("\n"));
+    } else {
+      sections.push(shown > 0 ? `${header}. Only those get a section; the rest are named at the end.` : `${header}.`);
     }
-    return `${header}\n${formatStatusBody(repo)}`;
-  });
+  }
+
+  if (!summarised) {
+    for (const repo of status.repos) {
+      const header = `=== ${repo.repo} ===`;
+      sections.push("error" in repo
+        ? `${header}\nstatus unavailable: ${repo.error}`
+        : `${header}\n${formatStatusBody(repo)}`);
+    }
+  }
+
+  if (wide && status.without_graph.count > 0) {
+    sections.push(`No graph yet (${status.without_graph.count}): ${status.without_graph.repos.join(", ")}`);
+  }
 
   if (status.global_facts.count > 0) {
     sections.push(

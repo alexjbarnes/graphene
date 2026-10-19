@@ -9,7 +9,7 @@ covers:
   - hooks/
   - src/claude-md.ts
   - tests/hooks/
-last_commit: c544f65
+last_commit: 2ae06f4
 edges:
   - to: file-store type: depends_on reason: hook reads status and affected nodes through the store
   - to: mcp-tools type: depends_on reason: multi-repo status injection calls dist/server.js dispatch, the same path as the status tool
@@ -23,3 +23,4 @@ edges:
 - GRAPHENE_RULES tells agents to remove an observation in the same step as recording its replacement, and to keep each to one point of at most 1,500 characters. When learn() refuses because a node is full, they must make room (remove superseded observations or split the node by topic) and then record; a red-flag row covers skipping the recording instead. The limits themselves are enforced in src/budget.ts. <!-- id:ca30 -->
 - Status injection on the first tool call renders the bounded status through formatStatus: node index with observation counts, stale nodes, and project/global fact keys, never observation or fact bodies. The hook loads the store and server from compiled dist/, so it only sees src changes after a rebuild. <!-- id:4fd3 -->
 - SessionStart appends a memory notice when the project's auto-memory folder holds any .md file. memoryNotice in hooks/graphene-guard.mjs takes the folder from the hook input's transcript_path (<project dir>/memory, beside the transcripts) instead of rebuilding Claude Code's folder name from cwd, lists up to 10 files, and names /graphene:migrate-memory, so rename the skill and the notice together. <!-- id:556e -->
+- formatMultiStatus renders the wide-session status shape: it detects wide mode by the presence of without_graph and one-line mode by any repo entry carrying node_count (formatRepoSummary), then prints a header ("N repos in scope, M with a graph"), sections or one-liners, and a "No graph yet (N): ..." line before the global facts. The JSON shape comes from routeStatus in src/server.ts, so change the two together; the hook tests build bare .git directories for graphless repos because discovery only checks for .git and status never runs git on them. <!-- id:7a54 -->

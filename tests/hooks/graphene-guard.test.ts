@@ -567,6 +567,59 @@ describe("graphene-guard hook", () => {
     });
   });
 
+  describe("PreToolUse - status injection for a parent of more than 20 repos", () => {
+    let parent: string;
+
+    beforeEach(() => {
+      parent = mkdtempSync(join(tmpdir(), "graphene-hook-wide-"));
+    });
+
+    afterEach(() => {
+      rmSync(parent, { recursive: true, force: true });
+    });
+
+    function injected(): string {
+      const { stdout } = run({
+        session_id: "s1",
+        hook_event_name: "PreToolUse",
+        tool_name: "Read",
+        tool_input: {},
+      }, { cwd: parent });
+      return parseOutput(stdout).hookSpecificOutput.additionalContext;
+    }
+
+    it("gives a section only to repos with a graph and names the rest on one line", () => {
+      // Discovery only looks for a .git entry, and status never touches git
+      // in a repo without a graph, so a bare directory stands in for each.
+      for (let i = 0; i < 86; i++) {
+        mkdirSync(join(parent, `plain-${String(i).padStart(2, "0")}`, ".git"), { recursive: true });
+      }
+      const api = createTestGitRepo(parent, "api");
+      api.writeFile(".graphene/nodes/auth.md", "---\ntype: subsystem\nsummary: API auth\n---\n");
+
+      const ctx = injected();
+      expect(ctx).toContain("87 repos in scope, 1 with a graph. Only those get a section");
+      expect(ctx).toContain("=== api ===");
+      expect(ctx).toContain("auth [subsystem]: API auth");
+      expect(ctx).toContain("No graph yet (86): plain-00, plain-01");
+      expect(ctx).toContain("+36 more");
+      expect(ctx).not.toContain("=== plain-00 ===");
+    });
+
+    it("cuts each repo to one line once more than 20 have a graph", () => {
+      for (let i = 0; i < 21; i++) {
+        const repo = createTestGitRepo(parent, `svc-${String(i).padStart(2, "0")}`);
+        repo.writeFile(".graphene/nodes/auth.md", "---\ntype: subsystem\nsummary: Auth\n---\n");
+      }
+
+      const ctx = injected();
+      expect(ctx).toContain("21 repos in scope, 21 with a graph, one line each");
+      expect(ctx).toContain("  - svc-00 (1 node), STALE: auth");
+      expect(ctx).not.toContain("=== svc-00 ===");
+      expect(ctx).not.toContain("No graph yet");
+    }, 30000);
+  });
+
   describe("SessionStart - rules injection", () => {
     it("injects the rules block on startup", () => {
       const { stdout } = run({
