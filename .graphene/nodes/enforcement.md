@@ -9,7 +9,7 @@ covers:
   - hooks/
   - src/claude-md.ts
   - tests/hooks/
-last_commit: 2ae06f4
+last_commit: 7957b4c
 edges:
   - to: file-store type: depends_on reason: hook reads status and affected nodes through the store
   - to: mcp-tools type: depends_on reason: multi-repo status injection calls dist/server.js dispatch, the same path as the status tool
@@ -24,3 +24,4 @@ edges:
 - Status injection on the first tool call renders the bounded status through formatStatus: node index with observation counts, stale nodes, and project/global fact keys, never observation or fact bodies. The hook loads the store and server from compiled dist/, so it only sees src changes after a rebuild. <!-- id:4fd3 -->
 - SessionStart appends a memory notice when the project's auto-memory folder holds any .md file. memoryNotice in hooks/graphene-guard.mjs takes the folder from the hook input's transcript_path (<project dir>/memory, beside the transcripts) instead of rebuilding Claude Code's folder name from cwd, lists up to 10 files, and names /graphene:migrate-memory, so rename the skill and the notice together. <!-- id:556e -->
 - formatMultiStatus renders the wide-session status shape: it detects wide mode by the presence of without_graph and one-line mode by any repo entry carrying node_count (formatRepoSummary), then prints a header ("N repos in scope, M with a graph"), sections or one-liners, and a "No graph yet (N): ..." line before the global facts. The JSON shape comes from routeStatus in src/server.ts, so change the two together; the hook tests build bare .git directories for graphless repos because discovery only checks for .git and status never runs git on them. <!-- id:7a54 -->
+- The injected rules text (GRAPHENE_RULES Multi-repo sessions) states that scope is re-discovered on every call, so a folder that becomes a repo mid-session needs no restart. Keep that sentence in step with ServerContext.cwd in src/server.ts; rebuild dist after editing it. <!-- id:4080 -->

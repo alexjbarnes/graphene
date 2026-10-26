@@ -30,6 +30,7 @@ import { exportGlobals, importGlobals } from "./globals-sync.js";
 import type { IndexEntry, NodeDetail, ObservationDetail, SearchResult } from "./types.js";
 import {
   type RepoScope,
+  discoverScopes,
   parseNodeRef,
   resolveNodeRef,
   resolveUpsertRef,
@@ -40,6 +41,12 @@ import {
 export interface ServerContext {
   scopes: RepoScope[];
   globalDir: string;
+  // Set by the stdio server to the directory it was started in. When
+  // present, every repo-scoped call re-discovers scopes from here, so a
+  // folder that becomes a git repo (or a repo added to a parent) mid-session
+  // is picked up without restarting the server. Tests and the hook pass
+  // fixed scopes and leave this unset.
+  cwd?: string;
 }
 
 const TOOLS = [
@@ -567,7 +574,27 @@ function dispatchGlobalsImport(
   return importGlobals(globalDir, path, overwrite);
 }
 
+// Global facts are not scoped to a repo, so these tools dispatch without
+// needing scopes at all; keeping them out of re-discovery also means they
+// work identically outside any repo.
+const GLOBAL_TOOLS = new Set([
+  "global_read",
+  "global_write",
+  "global_delete",
+  "globals_export",
+  "globals_import",
+]);
+
 export function dispatch(ctx: ServerContext, tool: string, args: Record<string, unknown>): unknown {
+  // Scopes are session-local and can change while the server runs: a
+  // directory that was not a repo when the server started may become one,
+  // and a parent session can gain or lose child repos. Re-discovering costs
+  // one git call plus a couple of directory scans, so it runs on every
+  // repo-scoped call rather than needing an explicit refresh command.
+  if (ctx.cwd !== undefined && !GLOBAL_TOOLS.has(tool)) {
+    ctx = { ...ctx, scopes: discoverScopes(ctx.cwd) };
+  }
+
   switch (tool) {
     case "global_read":
       return handleGlobalRead(ctx.globalDir, args);

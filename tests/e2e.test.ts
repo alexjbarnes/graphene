@@ -282,6 +282,53 @@ describe("e2e: multi-repo session over MCP stdio", () => {
   });
 });
 
+// A session started in a directory that is not a git repo yet. Scopes are
+// re-discovered on every repo-scoped call, so making the directory a repo
+// mid-session must start working without restarting the server.
+describe("e2e: a directory that becomes a git repo mid-session", () => {
+  it("serves repo tools after git init, with no server restart", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "graphene-e2e-late-repo-"));
+    const home = mkdtempSync(join(tmpdir(), "graphene-e2e-home-"));
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [DIST_INDEX],
+      cwd: dir,
+      env: { ...process.env, HOME: home },
+    });
+    const client = new Client({ name: "graphene-e2e-late-repo-test", version: "0.0.1" });
+    await client.connect(transport);
+
+    try {
+      const before = await client.callTool({ name: "status", arguments: {} });
+      expect(before.isError).toBe(true);
+
+      execSync("git init", { cwd: dir, stdio: "ignore" });
+      execSync("git config user.email test@test.com", { cwd: dir, stdio: "ignore" });
+      execSync("git config user.name Test", { cwd: dir, stdio: "ignore" });
+      execSync("git commit --allow-empty -m init", { cwd: dir, stdio: "ignore" });
+
+      const after = parseResult<{ head: string; nodes: unknown[] }>(
+        (await client.callTool({ name: "status", arguments: {} })) as CallToolResult
+      );
+      expect(after.head).toMatch(/^[0-9a-f]{40}$/);
+      expect(after.nodes).toHaveLength(0);
+
+      await client.callTool({
+        name: "upsert_node",
+        arguments: { name: "core", type: "subsystem", summary: "Picked up mid-session" },
+      });
+      const index = parseResult<{ nodes: Array<{ name: string }> }>(
+        (await client.callTool({ name: "read", arguments: {} })) as CallToolResult
+      );
+      expect(index.nodes).toEqual([{ name: "core", type: "subsystem", summary: "Picked up mid-session" }]);
+    } finally {
+      await client.close();
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 20000);
+});
+
 // Covers the v0.11 startup migration end to end: a legacy sql.js context.db
 // seeded before the server ever starts must be migrated in place (server.ts
 // itself never sees the legacy db -- index.ts migrates every scope before

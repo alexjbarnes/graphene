@@ -121,6 +121,7 @@ If the working directory is itself a git repo, that repo is the only one in scop
 - Cross-repo edges are not supported. `link`, `unlink`, and edges inside `batch` require `from` and `to` to resolve to the same repo; a pair that resolves to two different repos is rejected, naming both.
 - `project_read`, `project_write`, and `project_delete` take a `repo` argument, required once more than one repo is in scope.
 - `global_read`, `global_write`, `global_delete`, `globals_export`, and `globals_import` are unaffected: global facts are never scoped to a repo.
+- Scope is re-discovered from the working directory on every repo-scoped call, not fixed when the server starts: a directory that becomes a git repo mid-session, or a repo added to or removed from a parent directory, is picked up by the next tool call with no server restart.
 - `read()` with no name, and `status()`, aggregate across every repo in scope rather than picking one; see their entries above for the exact shape. Past 20 repos, status names the repos without a graph instead of giving each an entry, and `read` takes a `repo` argument to list one repo's nodes.
 
 ## A typical session

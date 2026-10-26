@@ -340,6 +340,74 @@ describe("single-repo status shape is unchanged (regression guard)", () => {
   });
 });
 
+describe("scopes follow the filesystem between calls", () => {
+  let dir: string;
+  let globalStore: TestGlobalDir;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "graphene-follow-"));
+    globalStore = createTestGlobalDir();
+  });
+
+  afterEach(() => {
+    globalStore.cleanup();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  // Scopes as they were at startup, with cwd set the way src/index.ts sets
+  // it: dispatch must re-discover rather than trusting this snapshot.
+  function startupCtx(): ServerContext {
+    return { cwd: dir, scopes: discoverScopes(dir), globalDir: globalStore.dir };
+  }
+
+  it("picks up the session directory becoming a git repo after the server started", () => {
+    const ctx = startupCtx();
+    expect(() => dispatch(ctx, "status", {})).toThrow(/Not in a git repository/);
+
+    const { execSync } = require("node:child_process") as typeof import("node:child_process");
+    execSync("git init", { cwd: dir, stdio: "ignore" });
+    execSync("git config user.email test@test.com", { cwd: dir, stdio: "ignore" });
+    execSync("git config user.name Test", { cwd: dir, stdio: "ignore" });
+    execSync("git commit --allow-empty -m init", { cwd: dir, stdio: "ignore" });
+
+    const status = dispatch(ctx, "status", {}) as { head: string; nodes: unknown[] };
+    expect(status.head).toMatch(/^[0-9a-f]{40}$/);
+    expect(status.nodes).toHaveLength(0);
+
+    dispatch(ctx, "upsert_node", { name: "core", type: "subsystem" });
+    expect(readNode(dir, "core")).not.toBeNull();
+  });
+
+  it("picks up a child repo added to a parent-directory session", () => {
+    const ctx = startupCtx();
+    expect(() => dispatch(ctx, "read", {})).toThrow(/Not in a git repository/);
+
+    createTestGitRepo(dir, "api");
+    // One repo in scope, so a bare name resolves there without repo: qualification.
+    dispatch(ctx, "upsert_node", { name: "core", type: "subsystem" });
+
+    // One repo in scope, so the single-repo shape applies: no repo field.
+    const index = dispatch(ctx, "read", {}) as { nodes: Array<Record<string, unknown>> };
+    expect(index.nodes).toEqual([{ name: "core", type: "subsystem", summary: null }]);
+  });
+
+  it("drops a scope whose directory is no longer there", () => {
+    const repo = createTestGitRepo(dir, "api");
+    const ctx = startupCtx();
+    expect(dispatch(ctx, "read", {}) as { nodes: unknown[] }).toHaveProperty("nodes");
+
+    rmSync(repo.path, { recursive: true, force: true });
+    expect(() => dispatch(ctx, "read", {})).toThrow(/Not in a git repository/);
+  });
+
+  it("still serves global facts outside any repo, without needing scopes", () => {
+    const ctx = startupCtx();
+    dispatch(ctx, "global_write", { category: "preference", subject: "testing", content: "TDD" });
+    const globals = dispatch(ctx, "global_read", {}) as { facts: Array<{ subject: string }> };
+    expect(globals.facts.map((f) => f.subject)).toEqual(["testing"]);
+  });
+});
+
 describe("a parent of more than 20 repos stays usable with bounded status", () => {
   let parent: string;
   let globalStore: TestGlobalDir;

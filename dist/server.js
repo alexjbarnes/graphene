@@ -24,7 +24,7 @@ import { handleBatch, planBatch } from "./tools/batch.js";
 import { handleStatus, boundedKeys } from "./tools/status.js";
 import { factsDir, listFacts, listNodes } from "./store.js";
 import { exportGlobals, importGlobals } from "./globals-sync.js";
-import { parseNodeRef, resolveNodeRef, resolveUpsertRef, resolveWriteTarget, rewriteRepoRelative, } from "./scope.js";
+import { discoverScopes, parseNodeRef, resolveNodeRef, resolveUpsertRef, resolveWriteTarget, rewriteRepoRelative, } from "./scope.js";
 const TOOLS = [
     {
         name: "status",
@@ -499,7 +499,25 @@ function dispatchGlobalsImport(globalDir, args) {
     const overwrite = args.overwrite === true;
     return importGlobals(globalDir, path, overwrite);
 }
+// Global facts are not scoped to a repo, so these tools dispatch without
+// needing scopes at all; keeping them out of re-discovery also means they
+// work identically outside any repo.
+const GLOBAL_TOOLS = new Set([
+    "global_read",
+    "global_write",
+    "global_delete",
+    "globals_export",
+    "globals_import",
+]);
 export function dispatch(ctx, tool, args) {
+    // Scopes are session-local and can change while the server runs: a
+    // directory that was not a repo when the server started may become one,
+    // and a parent session can gain or lose child repos. Re-discovering costs
+    // one git call plus a couple of directory scans, so it runs on every
+    // repo-scoped call rather than needing an explicit refresh command.
+    if (ctx.cwd !== undefined && !GLOBAL_TOOLS.has(tool)) {
+        ctx = { ...ctx, scopes: discoverScopes(ctx.cwd) };
+    }
     switch (tool) {
         case "global_read":
             return handleGlobalRead(ctx.globalDir, args);

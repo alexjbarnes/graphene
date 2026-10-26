@@ -3,6 +3,7 @@ import { type RepoScope } from "./scope.js";
 export interface ServerContext {
     scopes: RepoScope[];
     globalDir: string;
+    cwd?: string;
 }
 export declare function createServer(ctx: ServerContext): Server;
 export declare function dispatch(ctx: ServerContext, tool: string, args: Record<string, unknown>): unknown;

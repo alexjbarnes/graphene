@@ -41,7 +41,7 @@ Then register it with your MCP client. The server speaks stdio. The repo's own `
 }
 ```
 
-The server picks up the current working directory's git repo on startup. The hooks, skills, and rules injection are Claude Code features and do not come with this path. You get the 19 tools and nothing that reminds the agent to use them.
+The server picks up the current working directory's git repo, re-discovering it on every tool call, so a directory that becomes a repo mid-session is picked up without a restart. The hooks, skills, and rules injection are Claude Code features and do not come with this path. You get the 19 tools and nothing that reminds the agent to use them.
 
 ## Data locations
 

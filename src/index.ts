@@ -19,14 +19,18 @@ const cliArgs = process.argv.slice(2);
 if (cliArgs.length > 0) {
   runCli(cliArgs);
 } else {
-  const scopes = discoverScopes(process.cwd());
+  const cwd = process.cwd();
+  const scopes = discoverScopes(cwd);
 
+  // The migration below only sees repos that are already present at
+  // startup; a repo created later is picked up by dispatch's own scope
+  // re-discovery (ServerContext.cwd), not here.
   for (const scope of scopes) {
     tryMigrate(legacyRepoDbPath(scope.root), () => migrateRepo(scope.root));
   }
   tryMigrate(legacyGlobalDbPath(), () => migrateGlobal(globalDir()));
 
-  const server = createServer({ scopes, globalDir: globalDir() });
+  const server = createServer({ scopes, globalDir: globalDir(), cwd });
   const transport = new StdioServerTransport();
 
   process.on("SIGTERM", () => process.exit(0));
